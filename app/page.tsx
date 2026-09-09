@@ -25,6 +25,7 @@ import type { Workspace, Finding } from '@/lib/engine';
 type ApiResponse = {
   workspace: Workspace | null;
   revision: number;
+  storage?: 'Turso';
   error?: string;
 };
 const stages = ['Research', 'Calibration', 'Channels', 'Experiments'];
@@ -183,7 +184,7 @@ export default function Home() {
           traction<span className="mvp">LAB</span>
         </Link>
         <div className="top-actions">
-          <span className="private">Private workspace</span>
+          <span className="private">Saved to your account</span>
           <Button
             variant="outline"
             size="sm"
@@ -722,6 +723,14 @@ export default function Home() {
                 </Tabs>
               </section>
               <aside className="context-rail">
+                <div className="rail-card memory-card">
+                  <p className="eyebrow">DURABLE MEMORY</p>
+                  <h3>Context carries forward</h3>
+                  <p className="small muted">
+                    Your confirmed brief and experiment results are saved to your
+                    account and used in later live planning and drafting.
+                  </p>
+                </div>
                 <div className="rail-card">
                   <p className="eyebrow">THE NORTH STAR</p>
                   <h3>{w.goal || 'Define your first outcome'}</h3>
