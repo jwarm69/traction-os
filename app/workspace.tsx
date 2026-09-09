@@ -47,7 +47,7 @@ type Res = {
 type Act = (op: string, extra?: Record<string, unknown>) => Promise<void>;
 type FormState = Record<string, string>;
 type SetForm = Dispatch<SetStateAction<FormState>>;
-export default function Workspace() {
+export default function Workspace({ username }: { username: string }) {
   const inFlight = useRef(false);
   const [aiBudget, setAiBudget] = useState<Res['ai']>();
   const [b, setB] = useState<BusinessDocument | null>(null),
@@ -145,6 +145,7 @@ export default function Workspace() {
           Traction OS
         </div>
         <div className="top-actions">
+          <span className="private">{username}</span>
           <span className="private">
             {aiBudget?.enabled
               ? `Shared AI: $${aiBudget.remaining.toFixed(2)} available`
@@ -160,6 +161,9 @@ export default function Workspace() {
           >
             <KeyRound size={15} /> Connections
           </Button>
+          <form action="/api/auth/logout" method="post">
+            <Button type="submit" variant="ghost" size="sm">Sign out</Button>
+          </form>
         </div>
       </header>
       <div className="owner-layout">

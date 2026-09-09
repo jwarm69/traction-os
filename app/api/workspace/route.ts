@@ -1,4 +1,3 @@
-import { env } from 'cloudflare:workers';
 import {
   listBusinesses,
   importOwnerStarters,
@@ -28,14 +27,8 @@ import {
 import { parseSignalsCsv } from '@/lib/csv';
 import { runAI } from '@/lib/ai';
 import { budgetStatus } from '@/lib/ai-budget';
-type User = { id: string; email: string | null; name: string | null };
-const runtime = () =>
-  env as {
-    TURSO_DATABASE_URL?: string;
-    TURSO_AUTH_TOKEN?: string;
-    ALLOW_DEV_IDENTITY?: string;
-    OPENAI_API_KEY?: string;
-  };
+import { authenticateRequest, type AuthUser as User } from '@/lib/auth';
+import { runtime } from '@/lib/runtime';
 const out = (x: unknown, s = 200) =>
   Response.json(x, { status: s, headers: { 'Cache-Control': 'no-store' } });
 const txt = (x: unknown, n = 12000) => {
@@ -75,31 +68,6 @@ const sourceUrl = (value: unknown) => {
     throw Error('Research must include a supporting HTTPS source.');
   return url.href;
 };
-function user(req: Request): User | null {
-  let id = req.headers.get('oai-authenticated-user-id');
-  if (
-    runtime().ALLOW_DEV_IDENTITY === 'true' &&
-    new URL(req.url).hostname === 'localhost'
-  )
-    id = req.headers.get('x-traction-dev-user-id') || id;
-  if (!id || id.length > 200) return null;
-  let name: null | string = null;
-  try {
-    if (
-      req.headers.get('oai-authenticated-user-full-name-encoding') ===
-      'percent-encoded-utf-8'
-    )
-      name = decodeURIComponent(
-        req.headers.get('oai-authenticated-user-full-name') || '',
-      ).slice(0, 200);
-  } catch {}
-  return {
-    id,
-    email:
-      req.headers.get('oai-authenticated-user-email')?.slice(0, 320) || null,
-    name,
-  };
-}
 function legacy(
   raw: string,
   mem: { kind: string; content: string; updatedAt: string }[],
@@ -209,10 +177,10 @@ async function loadOrImport(u: User, id?: string) {
   };
 }
 export async function GET(req: Request) {
-  const u = user(req);
+  const u = await authenticateRequest(runtime(), req);
   if (!u)
     return out(
-      { error: 'Sign in through ChatGPT to open your businesses.' },
+      { error: 'Sign in to open your businesses.' },
       401,
     );
   try {
@@ -231,9 +199,9 @@ export async function GET(req: Request) {
   }
 }
 export async function POST(req: Request) {
-  const u = user(req);
+  const u = await authenticateRequest(runtime(), req);
   if (!u)
-    return out({ error: 'Sign in through ChatGPT to save your work.' }, 401);
+    return out({ error: 'Sign in to save your work.' }, 401);
   try {
     if (
       req.headers.get('origin') &&

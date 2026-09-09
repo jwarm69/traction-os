@@ -2,13 +2,13 @@
 
 ## Public beta and shared AI
 
-Anyone can visit the public URL. Sign in with ChatGPT to use private, per-account business records. The server-held `OPENAI_API_KEY` funds shared AI; it is never returned to the browser. Existing personal Google connections remain session-only.
+Anyone can visit the public URL. People register a unique username with a 4–6 digit PIN to use private, per-account business records. PINs are PBKDF2 hashed with a random per-account salt. Login sessions use hashed opaque tokens in secure HTTP-only cookies, and failed login attempts are throttled per username. The server-held `OPENAI_API_KEY` funds shared AI; it is never returned to the browser. Existing personal Google connections remain session-only.
 
 The `public-beta` ledger in Turso starts with a cumulative $10 ceiling. Each request atomically reserves a conservative maximum before contacting OpenAI. This covers concurrent requests across users. Text calls reserve $0.125; web research reserves $1.25 for up to two search calls. Completed usage is settled at uncached published token rates plus both possible search fees and a 10% cushion. Missing/uncertain usage keeps the full reservation. The app may pause before exactly $10; saved work stays available. There is no automatic refill or budget reset. This ledger does not limit other applications using the same key or non-OpenAI services.
 
 Pricing verified September 9, 2026: [GPT-5.4 mini](https://developers.openai.com/api/docs/models/gpt-5.4-mini), [search pricing](https://developers.openai.com/api/docs/pricing). The model is pinned to `gpt-5.4-mini-2026-03-17`, standard service tier, 3,500 output tokens, two maximum tool calls, and bounded prompts. Review these assumptions before changing the model or pricing. An operator can top up by increasing the existing ledger ceiling; never delete spend records to refill it.
 
-Owner starter records attach only to the matching trusted sign-in email. AlignIQ Golf, Astro-Log, Tonight, and this product have private pilot briefs and provisional three-channel rounds. These are plans, not completed campaigns. Their research and proposed goals need owner calibration; no messages were sent.
+Owner starter records attach only to the seeded owner account. AlignIQ Golf, Astro-Log, Tonight, and this product have private pilot briefs and provisional three-channel rounds. These are plans, not completed campaigns. Their research and proposed goals need owner calibration; no messages were sent.
 
 A private, multi-business GTM operating system: inspectable memory → sourced signals → bottleneck diagnosis → experiment rounds → outreach → weekly review.
 
@@ -21,7 +21,7 @@ npm ci
 npm run dev
 ```
 
-For this configured Turso project, `node scripts/dev-turso.mjs` starts the local app with a one-day database credential obtained from the signed-in Turso CLI. The credential stays in process memory and is excluded from production builds. Plain `npm run dev` requires separately configured runtime bindings.
+Local and production runs require `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. Founder-funded AI also requires a server-side `OPENAI_API_KEY`. Apply the SQL files in `migrations/` in order. To seed an owner, provide `OWNER_USERNAME`, `OWNER_PIN`, and `OWNER_EMAIL` alongside the Turso variables and run `node scripts/seed-owner.mjs`.
 
 Open the local URL printed by the server. The demo is fully fictional and cannot send email. A real workspace remains useful without an AI key for owner facts, manual or CSV signals, deterministic diagnosis, saved results, and reviews. Live research, prospect discovery, tailored drafts, and new live experiment rounds require an OpenAI key for the current tab.
 
@@ -31,7 +31,7 @@ Live research and tailored experiment rounds use the Responses API and `gpt-5.4-
 
 ```sh
 npx tsc --noEmit
-npx oxlint app lib db tests scripts vite.config.ts
+npx oxlint app lib db tests scripts
 node --test tests/*.test.mjs
 node tests/business-api.mjs
 node tests/turso-integration.mjs
@@ -40,9 +40,7 @@ npm run build
 
 The last two integration tests require the configured Turso CLI account; the API test also requires the local server. They create isolated temporary records and delete those records after the run. Google adapter tests mock provider responses; no emails are sent by tests.
 
-The deployed app uses the signed-in ChatGPT user header as the user key. Locally, set `ALLOW_DEV_IDENTITY=true` and send a test-only `x-traction-dev-user-id` header. The header is rejected in production.
-
-Live provider calls require a user-supplied API key and have not been exercised without one. The source follows https://developers.openai.com/api/reference/cli/resources/responses/methods/create . Provider errors and malformed output leave saved work unchanged.
+The deployed app uses its authenticated Turso account ID as the user key. Live provider calls use the capped server key when available, with an optional session-only user key fallback. Provider errors and malformed output leave saved work unchanged.
 
 ## Operational boundaries
 
