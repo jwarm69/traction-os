@@ -231,7 +231,7 @@ export default function Workspace({ username }: { username: string }) {
               requests. New research may pause before the balance reaches zero.
             </p>
           )}
-          {notice && <p className="saved-notice" role="status">{notice}</p>}
+          {notice && <output className="saved-notice" style={{display:'block'}}>{notice}</output>}
           {error && (
             <div className="error">
               {error}
