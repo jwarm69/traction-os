@@ -114,6 +114,7 @@ export type BusinessDocument = {
   goal: string;
   budget: string;
   notes: string;
+  contextDraft?: { summary: string; questions: string[]; generatedAt: string };
   facts: Fact[];
   signals: Signal[];
   diagnosis?: Diagnosis;

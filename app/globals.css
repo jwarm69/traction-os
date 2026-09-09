@@ -1288,6 +1288,29 @@ footer {
   }
 }
 /* Public account entry */
+.next-step { padding: 24px; border: 1px solid #c8d6f7; border-radius: 14px; background: #eef3ff; margin-bottom: 22px; }
+.next-step h2, .context-guide h2 { font-size: 24px; letter-spacing: -.6px; margin: 8px 0; }
+.next-step p { margin-bottom: 14px; }
+.context-guide { padding: 28px; border: 1px solid var(--border); border-radius: 14px; background: white; }
+.context-guide > label { display: block; margin: 22px 0 8px; font-weight: 600; font-size: 13px; }
+.context-summary { border-left: 3px solid #4965d9; padding: 18px; margin: 20px 0; background: #f6f8ff; }
+.context-summary ol { list-style: decimal; padding-left: 22px; }
+.context-summary li { margin: 12px 0; }
+.context-guide details, .more-progress { margin-top: 22px; }
+.context-guide summary, .more-progress > summary { cursor: pointer; padding: 12px 0; font-weight: 600; }
+.saved-notice { color: #166534; padding: 12px; background: #f0fdf4; border-radius: 8px; margin-bottom: 16px; }
+.secondary-tools { display: flex; gap: 8px; margin: 8px 0 20px; }
+.mobile-business-picker, .mobile-business-label { display: none; }
+@media(max-width:900px) {
+  .business-nav .business-item, .business-nav > .eyebrow, .business-nav .nav-note { display: none; }
+  .business-nav { display: flex; align-items: center; gap: 10px; padding: 16px 20px; }
+  .mobile-business-picker { display: block; min-width: 0; flex: 1; padding: 10px; border: 1px solid #d4dbe6; border-radius: 8px; background: white; }
+  .mobile-business-label { display: block; font-size: 12px; }
+  .owner-main { padding-top: 20px; }
+  .context-guide { padding: 20px; }
+  .owner-tabs { overflow-x: auto; max-width: 100%; }
+  .context-guide .action-row { display: flex; flex-wrap: wrap; gap: 10px; }
+}
 .auth-shell { min-height: 100vh; display: grid; place-items: center; padding: 32px 20px; background: #f4f1eb; }
 .auth-card { width: min(100%, 520px); background: #fff; border: 1px solid #d8d2c7; padding: clamp(28px, 6vw, 56px); box-shadow: 10px 10px 0 #171713; }
 .auth-brand { margin-bottom: 48px; }

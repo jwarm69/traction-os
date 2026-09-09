@@ -303,11 +303,24 @@ export async function POST(req: Request) {
         409,
       );
     const b = JSON.parse(row.data) as BusinessDocument;
-    if (op === 'update_profile') {
+    if (op === 'save_context') {
+      const update = required(x.update, 4000);
+      const notes = [b.notes, update].filter(Boolean).join('\n\n');
+      if (notes.length > 16000) throw Error('Your notes are full. Edit your business context to make room before adding more.');
+      b.notes = notes;
+      delete b.contextDraft;
+      addLog(b, 'Owner update saved to business context.');
+    } else if (op === 'organize_context') {
+      const a = await runAI(runtime(), u.id, txt(x.key || '', 500),
+        `Help the owner understand their business context. Return {summary,questions:[string]}. Summarize in at most 250 words; ask at most 3 specific, useful questions that would change the next growth decision. Distinguish owner statements, unreviewed research and proposed goals. Do not invent or claim completed work. Use only this context: ${JSON.stringify({name:b.name,goal:b.goal,budget:b.budget,notes:b.notes,facts:b.facts.slice(-12),rounds:b.rounds.slice(-2),signals:b.signals.slice(-8)})}`);
+      if (!Array.isArray(a.questions) || a.questions.length > 3) throw Error('The assistant returned an invalid set of questions.');
+      b.contextDraft = { summary: required(a.summary, 4000), questions: a.questions.map(q => required(q, 500)), generatedAt: new Date().toISOString() };
+      addLog(b, 'Assistant summarized saved context and suggested calibration questions.');
+    } else if (op === 'update_profile') {
       b.name = required(x.name, 200);
       b.goal = txt(x.goal, 2000);
       b.budget = txt(x.budget, 1000);
-      b.notes = txt(x.notes || '', 6000);
+      b.notes = txt(x.notes || '', 16000);
       addLog(b, 'Business direction updated. Existing rounds kept unchanged.');
     } else if (op === 'add_fact') {
       b.facts.push({

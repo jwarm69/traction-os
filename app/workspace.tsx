@@ -22,6 +22,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { BusinessDocument, Fact } from '@/lib/engine';
 import { ownerQueue } from '@/lib/owner-queue';
+import ContextGuide from './context-guide';
 type Summary = {
   id: string;
   name: string;
@@ -44,11 +45,12 @@ type Res = {
   error?: string;
   gmail?: { email: string };
 };
-type Act = (op: string, extra?: Record<string, unknown>) => Promise<void>;
+type Act = (op: string, extra?: Record<string, unknown>) => Promise<boolean>;
 type FormState = Record<string, string>;
 type SetForm = Dispatch<SetStateAction<FormState>>;
 export default function Workspace({ username }: { username: string }) {
   const inFlight = useRef(false);
+  const [notice, setNotice] = useState('');
   const [aiBudget, setAiBudget] = useState<Res['ai']>();
   const [b, setB] = useState<BusinessDocument | null>(null),
     [businesses, setBusinesses] = useState<Summary[]>([]),
@@ -67,9 +69,15 @@ export default function Workspace({ username }: { username: string }) {
     setB(d.business);
     setBusinesses(d.businesses || []);
     setRevision(d.revision || 0);
+    if (d.business) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('businessId', d.business.id);
+      window.history.replaceState(null, '', url);
+    }
   };
   useEffect(() => {
-    fetch('/api/workspace')
+    const selected = new URL(window.location.href).searchParams.get('businessId');
+    fetch('/api/workspace' + (selected ? '?businessId=' + encodeURIComponent(selected) : ''))
       .then(async (r) => {
         const d = (await r.json()) as Res;
         if (!r.ok) throw Error(d.error);
@@ -79,10 +87,11 @@ export default function Workspace({ username }: { username: string }) {
       .catch((e) => setError(e.message));
   }, []);
   async function act(op: string, extra: Record<string, unknown> = {}) {
-    if (inFlight.current) return;
+    if (inFlight.current) return false;
     inFlight.current = true;
     setBusy(op);
     setError('');
+    setNotice('');
     try {
       const r = await fetch('/api/workspace', {
           method: 'POST',
@@ -106,8 +115,11 @@ export default function Workspace({ username }: { username: string }) {
         setTab('today');
         setForm({});
       }
+      setNotice(op === 'save_context' ? 'Business update saved. Future plans will use this context.' : op === 'organize_context' ? 'Your context summary is ready below.' : 'Saved to your business.');
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not finish.');
+      return false;
     } finally {
       inFlight.current = false;
       setBusy('');
@@ -127,6 +139,8 @@ export default function Workspace({ username }: { username: string }) {
       setForm({});
       setShowNew(false);
       setError('');
+      setNotice('');
+      setTab('today');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not switch businesses.');
     } finally {
@@ -168,6 +182,11 @@ export default function Workspace({ username }: { username: string }) {
       </header>
       <div className="owner-layout">
         <aside className="business-nav">
+          <label className="mobile-business-label" htmlFor="business-picker">Business</label>
+          <select id="business-picker" className="mobile-business-picker" value={b?.id || ''} disabled={!!busy} onChange={e => select(e.target.value)}>
+            {!b && <option value="">Choose a business</option>}
+            {businesses.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+          </select>
           <p className="eyebrow">BUSINESSES</p>
           {businesses.map((x) => (
             <button
@@ -204,7 +223,7 @@ export default function Workspace({ username }: { username: string }) {
           </div>
         </aside>
         <main className="owner-main">
-          {aiBudget?.enabled && (
+          {aiBudget?.enabled && tab === 'connections' && (
             <p className="small muted" style={{ marginBottom: 16 }}>
               Founder-funded AI · ${aiBudget.used.toFixed(2)} of $
               {aiBudget.limit.toFixed(2)} committed. Includes conservative
@@ -212,6 +231,7 @@ export default function Workspace({ username }: { username: string }) {
               requests. New research may pause before the balance reaches zero.
             </p>
           )}
+          {notice && <p className="saved-notice" role="status">{notice}</p>}
           {error && (
             <div className="error">
               {error}
@@ -223,7 +243,7 @@ export default function Workspace({ username }: { username: string }) {
           {busy && (
             <div className="working">
               <RefreshCw className="spin" size={15} />
-              Saving {busy.replaceAll('_', ' ')}…
+              {busy === 'organize_context' ? 'Reading your business context… This can take a moment.' : 'Working on your request…'}
             </div>
           )}
           {tab === 'connections' && !b ? (
@@ -281,21 +301,21 @@ export default function Workspace({ username }: { username: string }) {
               <Tabs value={tab} onValueChange={(v) => setTab(String(v))}>
                 <TabsList className="owner-tabs" variant="line">
                   {[
-                    ['today', 'Today'],
-                    ['memory', 'Business memory'],
-                    ['signals', 'Signals'],
-                    ['rounds', 'Rounds'],
-                    ['outreach', 'Outreach'],
-                    ['reviews', 'Reviews'],
-                    ['connections', 'Connections'],
+                    ['today', 'Start here'],
+                    ['memory', 'Business context'],
+                    ['rounds', 'Growth plan'],
+                    ['signals', 'Results'],
                   ].map((x) => (
                     <TabsTrigger key={x[0]} value={x[0]}>
                       {x[1]}
                     </TabsTrigger>
                   ))}
                 </TabsList>
+                <div className="secondary-tools"><Button variant="ghost" size="sm" onClick={() => setTab('outreach')}>Prospects & messages</Button><Button variant="ghost" size="sm" onClick={() => setTab('reviews')}>Weekly review</Button></div>
                 <TabsContent value="today">
-                  <Today b={b} act={act} setTab={setTab} queue={queue} />
+                  <section className="next-step"><p className="eyebrow">YOUR NEXT STEP</p><h2>{queue[0]?.title || 'Keep your business context up to date'}</h2><p>{queue[0]?.detail || 'Tell us what changed, then plan your next small test.'}</p><Button onClick={() => setTab(queue[0]?.tab || 'memory')}>Continue <ChevronRight size={16}/></Button></section>
+                  <ContextGuide key={b.id} b={b} act={act} busy={!!busy} openMemory={() => setTab('memory')}/>
+                  <details className="more-progress"><summary>More actions and business diagnosis</summary><Today b={b} act={act} setTab={setTab} queue={queue}/></details>
                 </TabsContent>
                 <TabsContent value="memory">
                   <Memory key={`${b.id}:${revision}`} b={b} act={act} />
@@ -527,7 +547,7 @@ function Memory({ b, act }: { b: BusinessDocument; act: Act }) {
         </div>
         <div>
           <label htmlFor="profile-notes">Owner notes</label>
-          <Input id="profile-notes" defaultValue={b.notes} />
+              <Textarea id="profile-notes" rows={6} defaultValue={b.notes} />
         </div>
         <Button
           onClick={() =>
