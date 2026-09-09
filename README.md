@@ -1,5 +1,15 @@
 # Traction OS
 
+## Public beta and shared AI
+
+Anyone can visit the public URL. Sign in with ChatGPT to use private, per-account business records. The server-held `OPENAI_API_KEY` funds shared AI; it is never returned to the browser. Existing personal Google connections remain session-only.
+
+The `public-beta` ledger in Turso starts with a cumulative $10 ceiling. Each request atomically reserves a conservative maximum before contacting OpenAI. This covers concurrent requests across users. Text calls reserve $0.125; web research reserves $1.25 for up to two search calls. Completed usage is settled at uncached published token rates plus both possible search fees and a 10% cushion. Missing/uncertain usage keeps the full reservation. The app may pause before exactly $10; saved work stays available. There is no automatic refill or budget reset. This ledger does not limit other applications using the same key or non-OpenAI services.
+
+Pricing verified September 9, 2026: [GPT-5.4 mini](https://developers.openai.com/api/docs/models/gpt-5.4-mini), [search pricing](https://developers.openai.com/api/docs/pricing). The model is pinned to `gpt-5.4-mini-2026-03-17`, standard service tier, 3,500 output tokens, two maximum tool calls, and bounded prompts. Review these assumptions before changing the model or pricing. An operator can top up by increasing the existing ledger ceiling; never delete spend records to refill it.
+
+Owner starter records attach only to the matching trusted sign-in email. AlignIQ Golf, Astro-Log, Tonight, and this product have private pilot briefs and provisional three-channel rounds. These are plans, not completed campaigns. Their research and proposed goals need owner calibration; no messages were sent.
+
 A private, multi-business GTM operating system: inspectable memory → sourced signals → bottleneck diagnosis → experiment rounds → outreach → weekly review.
 
 ## Run locally

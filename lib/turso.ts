@@ -28,6 +28,17 @@ export async function listBusinesses(r: R, u: string) {
     };
   });
 }
+export async function importOwnerStarters(r:R,user:U) {
+  if(!user.email) return;
+  const c=db(r);
+  try {
+    const starters=await c.execute({sql:'SELECT business_id,data FROM owner_starters WHERE owner_email=?',args:[user.email.toLowerCase()]});
+    for(const row of starters.rows) {
+      const id=s(row.business_id);
+      if(!await loadBusiness(r,user.id,id)) await saveBusiness(r,user,id,s(row.data),null);
+    }
+  } finally {c.close();}
+}
 export async function loadBusiness(r: R, u: string, id: string) {
   const x = await db(r).execute({
     sql: 'SELECT data,revision FROM business_documents WHERE user_id=? AND id=?',
