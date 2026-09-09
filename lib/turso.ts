@@ -1,108 +1,92 @@
-import { createClient } from '@libsql/client/web';
-
-type TursoRuntime = {
-  TURSO_DATABASE_URL?: string;
-  TURSO_AUTH_TOKEN?: string;
-  ALLOW_DEV_IDENTITY?: string;
-};
-
-function scalar(value: unknown): string {
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'bigint') return value.toString();
-  throw new Error('Database returned an unexpected value.');
-}
-
-export type WorkspaceRow = {
-  data: string;
-  revision: number;
-};
-
-export type Memory = {
-  kind: string;
-  content: string;
-  createdAt: string;
-};
-
-function client(runtime: TursoRuntime) {
-  if (!runtime.TURSO_DATABASE_URL || !runtime.TURSO_AUTH_TOKEN) {
-    throw new Error('Workspace storage is not configured. Please try again shortly.');
-  }
+import { createClient, type InStatement } from '@libsql/client/web';
+import type { BusinessDocument } from './engine';
+type R = { TURSO_DATABASE_URL?: string; TURSO_AUTH_TOKEN?: string };
+type U = { id: string; email: string | null; name: string | null };
+const s = (v: unknown) => (typeof v === 'string' ? v : '');
+const db = (r: R) => {
+  if (!r.TURSO_DATABASE_URL || !r.TURSO_AUTH_TOKEN)
+    throw Error('Business storage is not configured.');
   return createClient({
-    url: runtime.TURSO_DATABASE_URL,
-    authToken: runtime.TURSO_AUTH_TOKEN,
+    url: r.TURSO_DATABASE_URL,
+    authToken: r.TURSO_AUTH_TOKEN,
+  });
+};
+export async function listBusinesses(r: R, u: string) {
+  const x = await db(r).execute({
+    sql: 'SELECT id,data,revision,updated_at FROM business_documents WHERE user_id=? ORDER BY updated_at DESC',
+    args: [u],
+  });
+  return x.rows.map((row) => {
+    const d = JSON.parse(s(row.data)) as BusinessDocument;
+    return {
+      id: s(row.id),
+      name: d.name,
+      url: d.url,
+      mode: d.mode,
+      revision: Number(row.revision),
+      updatedAt: s(row.updated_at),
+    };
   });
 }
-
-export async function loadWorkspace(runtime: TursoRuntime, userId: string) {
-  const result = await client(runtime).execute({
-    sql: 'SELECT data, revision FROM workspaces WHERE user_id = ?',
-    args: [userId],
+export async function loadBusiness(r: R, u: string, id: string) {
+  const x = await db(r).execute({
+    sql: 'SELECT data,revision FROM business_documents WHERE user_id=? AND id=?',
+    args: [u, id],
   });
-  const row = result.rows[0];
-  return row
-    ? { data: scalar(row.data), revision: Number(row.revision) }
-    : null;
+  const row = x.rows[0];
+  return row ? { data: s(row.data), revision: Number(row.revision) } : null;
 }
-
-export async function saveWorkspace(
-  runtime: TursoRuntime,
-  user: { id: string; email: string | null; name: string | null },
+export async function loadLegacy(r: R, u: string) {
+  const c = db(r);
+  const [w, m] = await Promise.all([
+    c.execute({
+      sql: 'SELECT data FROM workspaces WHERE user_id=?',
+      args: [u],
+    }),
+    c.execute({
+      sql: 'SELECT kind,content,updated_at FROM memories WHERE user_id=? ORDER BY updated_at',
+      args: [u],
+    }),
+  ]);
+  return {
+    workspace: w.rows[0] ? s(w.rows[0].data) : null,
+    memories: m.rows.map((x) => ({
+      kind: s(x.kind),
+      content: s(x.content),
+      updatedAt: s(x.updated_at),
+    })),
+  };
+}
+export async function saveBusiness(
+  r: R,
+  user: U,
+  id: string,
   data: string,
-  previousRevision: number | null,
+  previous: number | null,
 ) {
-  const db = client(runtime);
-  const now = new Date().toISOString();
-  await db.execute({
-    sql: `INSERT INTO users (id, email, name, created_at, last_seen_at)
-          VALUES (?, ?, ?, ?, ?)
-          ON CONFLICT(id) DO UPDATE SET email = excluded.email, name = excluded.name, last_seen_at = excluded.last_seen_at`,
-    args: [user.id, user.email, user.name, now, now],
-  });
-  if (previousRevision === null) {
-    await db.execute({
-      sql: 'INSERT INTO workspaces (user_id, data, revision, updated_at) VALUES (?, ?, 1, ?)',
-      args: [user.id, data, now],
-    });
-    return 1;
-  }
-  const result = await db.execute({
-    sql: 'UPDATE workspaces SET data = ?, revision = revision + 1, updated_at = ? WHERE user_id = ? AND revision = ?',
-    args: [data, now, user.id, previousRevision],
-  });
-  if (result.rowsAffected !== 1) return null;
-  return previousRevision + 1;
-}
-
-export async function clearMemories(runtime: TursoRuntime, userId: string) {
-  await client(runtime).execute({
-    sql: 'DELETE FROM memories WHERE user_id = ?',
-    args: [userId],
-  });
-}
-
-export async function remember(
-  runtime: TursoRuntime,
-  userId: string,
-  kind: string,
-  content: string,
-) {
-  const now = new Date().toISOString();
-  await client(runtime).execute({
-    sql: `INSERT INTO memories (user_id, kind, content, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?)
-          ON CONFLICT(user_id, kind) DO UPDATE SET content = excluded.content, updated_at = excluded.updated_at`,
-    args: [userId, kind, content, now, now],
-  });
-}
-
-export async function memoriesForPrompt(runtime: TursoRuntime, userId: string) {
-  const result = await client(runtime).execute({
-    sql: 'SELECT kind, content, updated_at FROM memories WHERE user_id = ? ORDER BY updated_at DESC LIMIT 12',
-    args: [userId],
-  });
-  return result.rows.map((row) => ({
-    kind: scalar(row.kind),
-    content: scalar(row.content),
-    createdAt: scalar(row.updated_at),
-  }));
+  const c = db(r),
+    now = new Date().toISOString();
+  const stmts: InStatement[] = [
+    {
+      sql: `INSERT INTO users(id,email,name,created_at,last_seen_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET email=excluded.email,name=excluded.name,last_seen_at=excluded.last_seen_at`,
+      args: [user.id, user.email, user.name, now, now],
+    },
+  ];
+  stmts.push(
+    previous === null
+      ? {
+          sql: 'INSERT INTO business_documents(user_id,id,data,revision,created_at,updated_at) VALUES(?,?,?,1,?,?) ON CONFLICT(user_id,id) DO NOTHING',
+          args: [user.id, id, data, now, now],
+        }
+      : {
+          sql: 'UPDATE business_documents SET data=?,revision=revision+1,updated_at=? WHERE user_id=? AND id=? AND revision=?',
+          args: [data, now, user.id, id, previous],
+        },
+  );
+  const out = await c.batch(stmts, 'write');
+  return out[1].rowsAffected === 1
+    ? previous === null
+      ? 1
+      : previous + 1
+    : null;
 }

@@ -1,6 +1,6 @@
-# Traction Lab MVP
+# Traction OS
 
-A private GTM workspace: research → owner calibration → ranked channels → draft generation → owner handoff → outcome review.
+A private, multi-business GTM operating system: inspectable memory → sourced signals → bottleneck diagnosis → experiment rounds → outreach → weekly review.
 
 ## Run locally
 
@@ -11,32 +11,37 @@ npm ci
 npm run dev
 ```
 
-Open the local URL printed by the server. Choose **Try the demo**, confirm or correct every finding, save a goal and budget, suggest channels, and create one or two drafts. Complete a handoff with an action log, then record the measured result. Demo content is fictional and template-based.
+For this configured Turso project, `node scripts/dev-turso.mjs` starts the local app with a one-day database credential obtained from the signed-in Turso CLI. The credential stays in process memory and is excluded from production builds. Plain `npm run dev` requires separately configured runtime bindings.
 
-Live mode: use **Connect AI** to enter an OpenAI API key for the current tab, then enter a real business URL. This uses the Responses API with web search for research and model-generated plans/drafts. API usage is billed to that account. Keys remain in React memory and are passed to the server per request; they are not stored in Turso, cookies, logs, or browser storage. Reloading disconnects the key.
+Open the local URL printed by the server. The demo is fully fictional and cannot send email. A real workspace remains useful without an AI key for owner facts, manual or CSV signals, deterministic diagnosis, saved results, and reviews. Live research, prospect discovery, tailored drafts, and new live experiment rounds require an OpenAI key for the current tab.
+
+Live research and tailored experiment rounds use the Responses API and `gpt-5.4-mini`. OpenAI, Gmail, and GA4 bearer tokens remain in React memory, are passed only for the requested operation, and are never stored in business documents, cookies, or browser storage. Reloading disconnects them.
 
 ## Verification
 
 ```sh
 npx tsc --noEmit
+npx oxlint app lib db tests scripts vite.config.ts
+node --test tests/*.test.mjs
+node tests/business-api.mjs
+node tests/turso-integration.mjs
 npm run build
 ```
+
+The last two integration tests require the configured Turso CLI account; the API test also requires the local server. They create isolated temporary records and delete those records after the run. Google adapter tests mock provider responses; no emails are sent by tests.
 
 The deployed app uses the signed-in ChatGPT user header as the user key. Locally, set `ALLOW_DEV_IDENTITY=true` and send a test-only `x-traction-dev-user-id` header. The header is rejected in production.
 
 Live provider calls require a user-supplied API key and have not been exercised without one. The source follows https://developers.openai.com/api/reference/cli/resources/responses/methods/create . Provider errors and malformed output leave saved work unchanged.
 
-## MVP boundaries
+## Operational boundaries
 
-- Turso persists one current workspace per authenticated user. The workspace follows that person across browsers when they are signed in to the same ChatGPT account.
-- Turso also stores an owner-confirmed business brief after calibration and one concise readout per experiment after results are logged. That memory is included in later live channel planning and draft creation for the current workspace. Starting new research clears prior workspace memory so it cannot influence an unrelated business.
-- New research replaces the current workspace after successful research. Export is available.
-- Actual automated capabilities: public web research (live mode), planning, text artifact generation, state transitions and outcome readouts.
-- External sending, publishing, spending, browser automation and CLI execution are not integrated. These create explicit manual owner handoffs. Completion logs are owner-reported, not independently verified.
-- There is no background scheduler: actions run during requests and can be resumed explicitly after a handoff. Requests time out after 120 seconds and retain prior state on failure.
-- Live channels use the calibrated brief. Demo channels and templates are intentionally fixed examples, with edited brief values included in drafts.
-- Research statements are model-generated and require owner review, including checking source links. Channel targets are hypotheses, never predicted outcomes.
-- The owner action unlocks measurement. Outcome readouts use a transparent target comparison, not causal attribution.
-- Keep the site private. Shared access would need account-based ownership, abuse controls and a separate credential strategy.
+- Turso stores independent business documents under the trusted signed-in user identity. Every mutation uses per-business optimistic concurrency. The user upsert and document write share one database transaction.
+- `migrations/002_business_documents.sql` is additive. On first load, an earlier single workspace and its experiment memories are lazily imported into one business; the old tables remain intact.
+- Facts expose source, observed date, confidence, and owner review state. Diagnostics preserve missing evidence as unknown rather than treating it as zero.
+- CSV and owner-entered signals remain labeled by provenance. GA4 key events are never presented as leads or sales.
+- Gmail uses `gmail.send` and `gmail.readonly`; GA4 uses `analytics.readonly`. Gmail approval is bound to one recipient, reviewed content, a stable message ID, and the verified sending mailbox. The app persists `sending` before the external request. An ambiguous outcome becomes `uncertain`, blocks retry, and requires explicit reconciliation.
+- Reply sync and GA4 import are owner-triggered. Weekly reviews are generated on demand and show the next due date; no background scheduler is claimed.
+- Model research and drafts still require owner review. Experiment targets are hypotheses and result comparisons are not causal attribution.
 
 The bundled component catalog has existing lint diagnostics in unused primitives. Application-source lint is checked separately with `npx oxlint app lib db tests`.

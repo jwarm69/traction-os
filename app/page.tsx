@@ -1,814 +1,1197 @@
 'use client';
-import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 import {
-  ArrowUpRight,
-  ArrowRight,
+  Activity,
+  BarChart3,
+  Building2,
   Check,
-  Compass,
+  ChevronRight,
+  Database,
   FlaskConical,
-  Globe,
-  Hand,
-  Layers,
-  LoaderCircle,
-  Radar,
-  Sparkles,
-  Download,
-  CircleDot,
   KeyRound,
+  Mail,
+  Plus,
+  RefreshCw,
+  Send,
+  Target,
 } from 'lucide-react';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import type { Workspace, Finding } from '@/lib/engine';
-type ApiResponse = {
-  workspace: Workspace | null;
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import type { BusinessDocument, Fact } from '@/lib/engine';
+import { ownerQueue } from '@/lib/owner-queue';
+type Summary = {
+  id: string;
+  name: string;
+  url: string;
+  mode: string;
   revision: number;
-  storage?: 'Turso';
-  error?: string;
+  updatedAt: string;
 };
-const stages = ['Research', 'Calibration', 'Channels', 'Experiments'];
+type Res = {
+  business: BusinessDocument | null;
+  businesses: Summary[];
+  revision: number;
+  error?: string;
+  gmail?: { email: string };
+};
+type Act = (op: string, extra?: Record<string, unknown>) => Promise<void>;
+type FormState = Record<string, string>;
+type SetForm = Dispatch<SetStateAction<FormState>>;
 export default function Home() {
-  const [w, setW] = useState<Workspace | null>(null),
+  const inFlight = useRef(false);
+  const [b, setB] = useState<BusinessDocument | null>(null),
+    [businesses, setBusinesses] = useState<Summary[]>([]),
     [revision, setRevision] = useState(0),
-    [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(''),
     [error, setError] = useState(''),
-    [tab, setTab] = useState('Research'),
-    [url, setUrl] = useState(''),
+    [tab, setTab] = useState('today'),
     [key, setKey] = useState(''),
-    [showKey, setShowKey] = useState(false),
-    [findings, setFindings] = useState<Finding[]>([]),
-    [goal, setGoal] = useState(''),
-    [budget, setBudget] = useState(''),
-    [notes, setNotes] = useState(''),
-    [evidence, setEvidence] = useState<Record<string, string>>({}),
-    [results, setResults] = useState<Record<string, string>>({}),
-    [showNew, setShowNew] = useState(false);
-  function accept(data: { workspace: Workspace | null; revision: number }) {
-    setW(data.workspace);
-    setRevision(data.revision);
-    if (data.workspace) {
-      setFindings(data.workspace.findings);
-      setGoal(data.workspace.goal);
-      setBudget(data.workspace.budget);
-      setNotes(data.workspace.notes);
-    }
-  }
+    [gmailToken, setGmail] = useState(''),
+    [ga4Token, setGa4] = useState(''),
+    [form, setForm] = useState<Record<string, string>>({}),
+    [showNew, setShowNew] = useState(false),
+    [gmailAccount, setGmailAccount] = useState('');
+  const accept = (d: Res) => {
+    setB(d.business);
+    setBusinesses(d.businesses || []);
+    setRevision(d.revision || 0);
+  };
   useEffect(() => {
     fetch('/api/workspace')
       .then(async (r) => {
-        if (!r.ok) throw Error('Could not load your workspace. Please reload.');
-        return r.json() as Promise<ApiResponse>;
+        const d = (await r.json()) as Res;
+        if (!r.ok) throw Error(d.error);
+        return d;
       })
       .then(accept)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .catch((e) => setError(e.message));
   }, []);
-  async function act(
-    op: string,
-    extra: Record<string, unknown> = {},
-    next?: string,
-  ) {
+  async function act(op: string, extra: Record<string, unknown> = {}) {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(op);
     setError('');
     try {
       const r = await fetch('/api/workspace', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ op, revision, key, ...extra }),
-      });
-      const data = (await r.json()) as ApiResponse;
-      if (!r.ok) throw Error(data.error || 'Something went wrong. Retry.');
-      accept(data);
-      setShowNew(false);
-      if (next) setTab(next);
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            op,
+            businessId: b?.id,
+            revision,
+            key,
+            gmailToken,
+            ga4Token,
+            ...extra,
+          }),
+        }),
+        d: Res = await r.json();
+      if (!r.ok) throw Error(d.error || 'Could not finish.');
+      if (d.gmail) setGmailAccount(d.gmail.email);
+      accept(d);
+      if (op === 'create_business' || op === 'create_demo') {
+        setShowNew(false);
+        setTab('today');
+        setForm({});
+      }
     } catch (e) {
-      setError(
-        e instanceof Error ? e.message : 'Could not complete the action.',
-      );
+      setError(e instanceof Error ? e.message : 'Could not finish.');
     } finally {
+      inFlight.current = false;
       setBusy('');
     }
   }
-  function download(name: string, content: string) {
-    const u = URL.createObjectURL(
-      new Blob([content], { type: 'text/markdown' }),
-    );
-    const a = document.createElement('a');
-    a.href = u;
-    a.download = name;
-    a.click();
-    URL.revokeObjectURL(u);
+  async function select(id: string) {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setBusy('select');
+    try {
+      const response = await fetch(
+        `/api/workspace?businessId=${encodeURIComponent(id)}`,
+      );
+      const d: Res = await response.json();
+      if (!response.ok) throw Error(d.error || 'Could not switch businesses.');
+      accept(d);
+      setForm({});
+      setShowNew(false);
+      setError('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not switch businesses.');
+    } finally {
+      inFlight.current = false;
+      setBusy('');
+    }
   }
-  const waiting = w?.channels.filter((c) => c.status === 'needs_owner') || [];
-  const active = w?.channels.filter((c) => c.status !== 'suggested') || [];
-  const setup = (
-    <section className="setup">
-      {w && (
-        <p className="demo-banner">
-          Starting new research replaces this browser’s current workspace.
-          Export it first if you want to keep a copy.
-        </p>
-      )}
-      <div className="setup-icon">
-        <Radar size={30} />
-      </div>
-      <p className="eyebrow">YOUR NEXT GROWTH EXPERIMENT STARTS HERE</p>
-      <h1>
-        First, let’s understand
-        <br />
-        the business.
-      </h1>
-      <p className="muted intro">
-        Start with its website. Then correct the research, choose your channels,
-        and put the first experiment to work.
-      </p>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void act('research', { url }, 'Research');
-        }}
-      >
-        <label htmlFor="website">Business website</label>
-        <div className="url-row">
-          <Globe size={18} />
-          <Input
-            id="website"
-            type="url"
-            required
-            placeholder="https://your-business.com"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-          />
-          <Button disabled={!!busy || !key} type="submit">
-            Research business <ArrowRight size={16} />
-          </Button>
-        </div>
-      </form>
-      <p className="small muted">
-        {key
-          ? 'Live research uses your OpenAI API account.'
-          : 'Connect an API key above to research a real business.'}
-      </p>
-      <div className="demo-row">
-        <div>
-          <strong>Take it for a test run</strong>
-          <p className="small muted">
-            A fictional bookkeeping studio. The complete workflow.
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          disabled={!!busy}
-          onClick={() => act('demo', {}, 'Research')}
-        >
-          Try the demo <ArrowUpRight size={16} />
-        </Button>
-      </div>
-      {w && (
-        <Button variant="ghost" onClick={() => setShowNew(false)}>
-          Back to current workspace
-        </Button>
-      )}
-    </section>
-  );
+  const queue = b ? ownerQueue(b) : [];
   return (
-    <div className="app-shell">
+    <div className="owner-shell">
       <header className="topbar">
-        <Link href="/" className="brand">
+        <div className="brand">
           <span className="brand-mark">
-            <Layers size={21} />
+            <Activity size={20} />
           </span>
-          traction<span className="mvp">LAB</span>
-        </Link>
+          Traction OS
+        </div>
         <div className="top-actions">
           <span className="private">Saved to your account</span>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setShowKey(!showKey)}
+            onClick={() => {
+              setShowNew(false);
+              setTab('connections');
+            }}
           >
-            <KeyRound size={15} />
-            {key ? 'AI connected for this session' : 'Connect AI'}
+            <KeyRound size={15} /> Connections
           </Button>
         </div>
       </header>
-      {showKey && (
-        <section className="connection">
-          <div>
-            <strong>Connect live research & drafting</strong>
-            <p className="small muted">
-              Your key stays in memory for this tab and is sent only to this
-              app’s server for OpenAI requests. It is not saved. Usage is billed
-              to your API account.
-            </p>
+      <div className="owner-layout">
+        <aside className="business-nav">
+          <p className="eyebrow">BUSINESSES</p>
+          {businesses.map((x) => (
+            <button
+              className={`business-item ${b?.id === x.id ? 'active' : ''}`}
+              key={x.id}
+              onClick={() => select(x.id)}
+            >
+              <Building2 size={16} />
+              <span>
+                {x.name}
+                <small>
+                  {x.mode === 'demo'
+                    ? 'Fictional demo'
+                    : new URL(x.url).hostname}
+                </small>
+              </span>
+            </button>
+          ))}
+          <Button
+            variant="outline"
+            disabled={!!busy}
+            onClick={() => {
+              setShowNew(true);
+              setTab('today');
+            }}
+          >
+            <Plus size={15} /> Add business
+          </Button>
+          <div className="nav-note">
+            <Database size={15} />
+            <span>
+              Each business keeps its own evidence, rounds, and history.
+            </span>
           </div>
-          <label className="sr-only" htmlFor="key">
-            OpenAI API key
-          </label>
+        </aside>
+        <main className="owner-main">
+          {error && (
+            <div className="error">
+              {error}
+              <Button variant="ghost" size="sm" onClick={() => setError('')}>
+                Dismiss
+              </Button>
+            </div>
+          )}
+          {busy && (
+            <div className="working">
+              <RefreshCw className="spin" size={15} />
+              Saving {busy.replaceAll('_', ' ')}…
+            </div>
+          )}
+          {tab === 'connections' && !b ? (
+            <Connections
+              keyValue={key}
+              gmail={gmailToken}
+              ga4={ga4Token}
+              account={gmailAccount}
+              setKey={setKey}
+              setGmail={setGmail}
+              setGa4={setGa4}
+              form={form}
+              setForm={setForm}
+              act={act}
+            />
+          ) : !b || showNew ? (
+            <NewBusiness
+              busy={!!busy}
+              form={form}
+              setForm={setForm}
+              cancel={b ? () => setShowNew(false) : undefined}
+              create={(demo: boolean) => {
+                void act(demo ? 'create_demo' : 'create_business', {
+                  name: form.newName,
+                  url: form.newUrl,
+                });
+              }}
+            />
+          ) : (
+            <>
+              <div className="workspace-heading">
+                <div>
+                  <p className="eyebrow">
+                    OWNER WORKSPACE /{' '}
+                    {b.mode === 'demo' ? 'FICTIONAL DEMO' : 'LIVE BUSINESS'}
+                  </p>
+                  <h1>{b.name}</h1>
+                  <p className="muted">
+                    {b.goal || 'Set a goal to focus the next round.'}
+                  </p>
+                </div>
+                <div className="queue-count">
+                  <strong>{queue.length}</strong>
+                  <span>open actions</span>
+                </div>
+              </div>
+              {b.mode === 'demo' && (
+                <div className="demo-banner">
+                  <FlaskConical size={16} />
+                  All facts, signals, prospects, drafts, and outcomes here are
+                  fictional.
+                </div>
+              )}
+              <Tabs value={tab} onValueChange={(v) => setTab(String(v))}>
+                <TabsList className="owner-tabs" variant="line">
+                  {[
+                    ['today', 'Today'],
+                    ['memory', 'Business memory'],
+                    ['signals', 'Signals'],
+                    ['rounds', 'Rounds'],
+                    ['outreach', 'Outreach'],
+                    ['reviews', 'Reviews'],
+                    ['connections', 'Connections'],
+                  ].map((x) => (
+                    <TabsTrigger key={x[0]} value={x[0]}>
+                      {x[1]}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+                <TabsContent value="today">
+                  <Today b={b} act={act} setTab={setTab} queue={queue} />
+                </TabsContent>
+                <TabsContent value="memory">
+                  <Memory key={`${b.id}:${revision}`} b={b} act={act} />
+                </TabsContent>
+                <TabsContent value="signals">
+                  <Signals b={b} act={act} form={form} setForm={setForm} />
+                </TabsContent>
+                <TabsContent value="rounds">
+                  <Rounds b={b} act={act} form={form} setForm={setForm} />
+                </TabsContent>
+                <TabsContent value="outreach">
+                  <Outreach
+                    b={b}
+                    act={act}
+                    form={form}
+                    setForm={setForm}
+                    gmailReady={!!gmailAccount}
+                    aiReady={!!key}
+                  />
+                </TabsContent>
+                <TabsContent value="reviews">
+                  <Reviews b={b} act={act} />
+                </TabsContent>
+                <TabsContent value="connections">
+                  <Connections
+                    keyValue={key}
+                    gmail={gmailToken}
+                    ga4={ga4Token}
+                    account={gmailAccount}
+                    setKey={setKey}
+                    setGmail={setGmail}
+                    setGa4={setGa4}
+                    form={form}
+                    setForm={setForm}
+                    act={act}
+                  />
+                </TabsContent>
+              </Tabs>
+            </>
+          )}
+        </main>
+      </div>
+    </div>
+  );
+}
+function NewBusiness(p: {
+  busy: boolean;
+  form: FormState;
+  setForm: SetForm;
+  cancel?: () => void;
+  create: (demo: boolean) => void;
+}) {
+  return (
+    <section className="setup">
+      <div className="setup-icon">
+        <Building2 />
+      </div>
+      <p className="eyebrow">START WITH THE BUSINESS</p>
+      <h1>Build a growth system that remembers.</h1>
+      <p className="muted intro">
+        Keep evidence, experiments, reviews, and outreach together through every
+        round.
+      </p>
+      <label htmlFor="new-business-name">Business name</label>
+      <Input
+        id="new-business-name"
+        value={p.form.newName || ''}
+        onChange={(e) => p.setForm({ ...p.form, newName: e.target.value })}
+        placeholder="Your business"
+      />
+      <label htmlFor="new-business-url">Website</label>
+      <Input
+        id="new-business-url"
+        type="url"
+        value={p.form.newUrl || ''}
+        onChange={(e) => p.setForm({ ...p.form, newUrl: e.target.value })}
+        placeholder="https://example.com"
+      />
+      <div className="action-row">
+        <Button
+          disabled={p.busy || !p.form.newUrl}
+          onClick={() => p.create(false)}
+        >
+          Add business <ChevronRight size={16} />
+        </Button>
+        <Button
+          variant="outline"
+          disabled={p.busy}
+          onClick={() => p.create(true)}
+        >
+          Open fictional demo
+        </Button>
+        {p.cancel && (
+          <Button variant="ghost" onClick={p.cancel}>
+            Cancel
+          </Button>
+        )}
+      </div>
+    </section>
+  );
+}
+function Today({
+  b,
+  act,
+  setTab,
+  queue,
+}: {
+  b: BusinessDocument;
+  act: Act;
+  setTab: (tab: string) => void;
+  queue: ReturnType<typeof ownerQueue>;
+}) {
+  return (
+    <section className="panel">
+      {queue.length > 0 && (
+        <div className="owner-queue">
+          <p className="eyebrow">NEEDS YOU</p>
+          {queue.slice(0, 5).map((item) => (
+            <button
+              key={item.id}
+              className="queue-item"
+              onClick={() => setTab(item.tab)}
+            >
+              <span>
+                <strong>{item.title}</strong>
+                <small>{item.detail}</small>
+              </span>
+              <ChevronRight size={16} />
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="section-title">
+        <div>
+          <p className="eyebrow">NEXT BEST ACTION</p>
+          <h2>
+            {b.diagnosis
+              ? b.diagnosis.bottleneck
+              : 'Diagnose the current bottleneck'}
+          </h2>
+          <p className="muted">
+            {b.diagnosis?.recommendation ||
+              'Use sourced signals to decide what is limiting growth now.'}
+          </p>
+        </div>
+        <Target />
+      </div>
+      <div className="today-grid">
+        <article className="focus-card">
+          <span className="card-index">01</span>
+          <h3>Refresh the diagnosis</h3>
+          <p>
+            {b.signals.length} signal{b.signals.length === 1 ? '' : 's'}{' '}
+            available. Low evidence stays visible as an unknown.
+          </p>
+          <Button onClick={() => act('diagnose')} disabled={!b.signals.length}>
+            Diagnose now
+          </Button>
+        </article>
+        <article className="focus-card">
+          <span className="card-index">02</span>
+          <h3>Run the next test</h3>
+          <p>
+            {b.rounds.length
+              ? `${b.rounds.length} preserved round${b.rounds.length === 1 ? '' : 's'} in history.`
+              : 'Turn the diagnosis into a small measurable round.'}
+          </p>
+          <Button variant="outline" onClick={() => setTab('rounds')}>
+            Open rounds
+          </Button>
+        </article>
+        <article className="focus-card">
+          <span className="card-index">03</span>
+          <h3>Review the week</h3>
+          <p>
+            {b.reviews[0]
+              ? `Next review due ${new Date(b.reviews[0].nextReviewDue).toLocaleDateString()}.`
+              : 'Generate an honest report from recorded results.'}
+          </p>
+          <Button variant="outline" onClick={() => setTab('reviews')}>
+            Open reviews
+          </Button>
+        </article>
+      </div>
+      {b.diagnosis && (
+        <div className="diagnosis">
+          <div>
+            <p className="eyebrow">EVIDENCE USED</p>
+            {b.diagnosis.evidence.map((x) => (
+              <p key={x}>• {x}</p>
+            ))}
+          </div>
+          <div>
+            <p className="eyebrow">STILL UNKNOWN</p>
+            {b.diagnosis.unknowns.length ? (
+              b.diagnosis.unknowns.map((x) => <p key={x}>• {x}</p>)
+            ) : (
+              <p>No explicit evidence gaps flagged.</p>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+function Memory({ b, act }: { b: BusinessDocument; act: Act }) {
+  const [facts, setFacts] = useState<Fact[]>(b.facts);
+  return (
+    <section className="panel">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow">INSPECTABLE MEMORY</p>
+          <h2>What the system believes</h2>
+          <p className="muted">
+            Every fact keeps a source, date, confidence, and owner review state.
+          </p>
+        </div>
+        <Database />
+      </div>
+      <div className="profile-grid">
+        <div>
+          <label htmlFor="profile-goal">Goal</label>
+          <Input id="profile-goal" defaultValue={b.goal} />
+        </div>
+        <div>
+          <label htmlFor="profile-budget">Resources</label>
+          <Input id="profile-budget" defaultValue={b.budget} />
+        </div>
+        <div>
+          <label htmlFor="profile-notes">Owner notes</label>
+          <Input id="profile-notes" defaultValue={b.notes} />
+        </div>
+        <Button
+          onClick={() =>
+            act('update_profile', {
+              name: b.name,
+              goal: (
+                document.querySelector('#profile-goal') as HTMLInputElement
+              ).value,
+              budget: (
+                document.querySelector('#profile-budget') as HTMLInputElement
+              ).value,
+              notes: (
+                document.querySelector('#profile-notes') as HTMLInputElement
+              ).value,
+            })
+          }
+        >
+          Save direction
+        </Button>
+      </div>
+      <details>
+        <summary>Add an owner fact</summary>
+        <div className="signal-form">
+          <Input id="new-fact-label" placeholder="Label" />
+          <Input id="new-fact-value" placeholder="What is true?" />
+          <Input id="new-fact-source" placeholder="Source or Owner input" />
+          <Button
+            onClick={() =>
+              act('add_fact', {
+                label: (
+                  document.querySelector('#new-fact-label') as HTMLInputElement
+                ).value,
+                value: (
+                  document.querySelector('#new-fact-value') as HTMLInputElement
+                ).value,
+                source: (
+                  document.querySelector('#new-fact-source') as HTMLInputElement
+                ).value,
+                confidence: 'medium',
+              })
+            }
+          >
+            Add fact
+          </Button>
+        </div>
+      </details>
+      {facts.map((f, i) => (
+        <article className="memory-row" key={f.id}>
+          <div className="memory-meta">
+            <strong>{f.label}</strong>
+            <span
+              className={`pill ${f.status === 'unreviewed' ? 'amber' : 'green'}`}
+            >
+              {f.status}
+            </span>
+            <span className="pill">{f.confidence} confidence</span>
+          </div>
+          <Textarea
+            value={f.value}
+            onChange={(e) =>
+              setFacts(
+                facts.map((x, j) =>
+                  j === i
+                    ? { ...x, value: e.target.value, status: 'corrected' }
+                    : x,
+                ),
+              )
+            }
+          />
+          <div className="source-row">
+            <Input
+              value={f.source}
+              onChange={(e) =>
+                setFacts(
+                  facts.map((x, j) =>
+                    j === i ? { ...x, source: e.target.value } : x,
+                  ),
+                )
+              }
+            />
+            <small>
+              Observed {new Date(f.observedAt).toLocaleDateString()}
+            </small>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                act('update_fact', {
+                  factId: f.id,
+                  value: f.value,
+                  source: f.source,
+                  confidence: f.confidence,
+                  status:
+                    f.value === b.facts[i].value ? 'confirmed' : 'corrected',
+                })
+              }
+            >
+              <Check size={14} /> Save review
+            </Button>
+          </div>
+        </article>
+      ))}
+    </section>
+  );
+}
+function Signals({
+  b,
+  act,
+  form,
+  setForm,
+}: {
+  b: BusinessDocument;
+  act: Act;
+  form: FormState;
+  setForm: SetForm;
+}) {
+  return (
+    <section className="panel">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow">REAL BUSINESS SIGNALS</p>
+          <h2>Evidence before advice</h2>
+          <p className="muted">
+            Manual entries and imports carry their provenance. No metric is
+            silently treated as revenue.
+          </p>
+        </div>
+        <BarChart3 />
+      </div>
+      <div className="signal-form">
+        <Input
+          placeholder="Metric"
+          value={form.metric || ''}
+          onChange={(e) => setForm({ ...form, metric: e.target.value })}
+        />
+        <Input
+          type="number"
+          placeholder="Value"
+          value={form.value || ''}
+          onChange={(e) => setForm({ ...form, value: e.target.value })}
+        />
+        <Input
+          placeholder="Period"
+          value={form.period || ''}
+          onChange={(e) => setForm({ ...form, period: e.target.value })}
+        />
+        <Input
+          placeholder="Source"
+          value={form.source || ''}
+          onChange={(e) => setForm({ ...form, source: e.target.value })}
+        />
+        <Button
+          onClick={() =>
+            act('add_signal', {
+              metric: form.metric,
+              value: form.value,
+              period: form.period,
+              source: form.source,
+              note: '',
+            })
+          }
+        >
+          Add signal
+        </Button>
+      </div>
+      <details>
+        <summary>Import CSV</summary>
+        <p className="small muted">
+          Columns: metric, value, period, note. Up to 200 rows.
+        </p>
+        <Textarea
+          value={form.csv || ''}
+          onChange={(e) => setForm({ ...form, csv: e.target.value })}
+          placeholder={
+            'metric,value,period,note\nQualified calls,3,August,CRM export'
+          }
+        />
+        <Button
+          variant="outline"
+          onClick={() =>
+            act('import_csv', {
+              csv: form.csv,
+              fileName: form.csvName || 'pasted-signals.csv',
+            })
+          }
+        >
+          Import rows
+        </Button>
+      </details>
+      <div className="data-table">
+        {b.signals
+          .slice()
+          .reverse()
+          .map((s) => (
+            <div className="data-row" key={s.id}>
+              <strong>{s.value}</strong>
+              <span>
+                {s.metric}
+                <small>{s.period}</small>
+              </span>
+              <span>
+                {s.source}
+                <small>
+                  {s.confidence} confidence ·{' '}
+                  {new Date(s.observedAt).toLocaleDateString()}
+                </small>
+              </span>
+            </div>
+          ))}
+      </div>
+    </section>
+  );
+}
+function Rounds({
+  b,
+  act,
+  form,
+  setForm,
+}: {
+  b: BusinessDocument;
+  act: Act;
+  form: FormState;
+  setForm: SetForm;
+}) {
+  return (
+    <section className="panel">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow">EXPERIMENT ROUNDS</p>
+          <h2>Learn without losing history</h2>
+          <p className="muted">
+            Each completed result informs the next round. Past rounds stay
+            intact.
+          </p>
+        </div>
+        <FlaskConical />
+      </div>
+      <div className="action-row">
+        <Input
+          placeholder={`Round ${b.rounds.length + 1} name`}
+          value={form.roundName || ''}
+          onChange={(e) => setForm({ ...form, roundName: e.target.value })}
+        />
+        <Button onClick={() => act('create_round', { name: form.roundName })}>
+          Create next round
+        </Button>
+      </div>
+      {b.rounds
+        .slice()
+        .reverse()
+        .map((r) => (
+          <article className="round" key={r.id}>
+            <div className="round-head">
+              <h3>{r.name}</h3>
+              <span className="pill">{r.status}</span>
+              <small>{new Date(r.createdAt).toLocaleDateString()}</small>
+            </div>
+            {r.rationale && <p className="muted">{r.rationale}</p>}
+            {r.briefSnapshot && (
+              <p className="small muted">
+                Planned for: {r.briefSnapshot.goal} · {r.briefSnapshot.budget}
+              </p>
+            )}
+            {r.experiments.map((e) => (
+              <div className="experiment" key={e.id}>
+                <div>
+                  <strong>{e.channel}</strong>
+                  <p>{e.hypothesis}</p>
+                  <p className="experiment-action">{e.action}</p>
+                  <small>
+                    Target: {e.target} {e.metric.toLowerCase()}
+                  </small>
+                </div>
+                {e.status === 'draft' && r.status !== 'complete' && (
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      act('start_experiment', { experimentId: e.id })
+                    }
+                  >
+                    Start
+                  </Button>
+                )}
+                {e.status === 'draft' && r.status === 'complete' && (
+                  <span className="pill">Not run</span>
+                )}
+                {e.status === 'running' && (
+                  <div className="result-entry">
+                    <Input
+                      type="number"
+                      placeholder="Result"
+                      id={`result-${e.id}`}
+                    />
+                    <Input
+                      placeholder="Evidence or action log"
+                      id={`evidence-${e.id}`}
+                    />
+                    <Input
+                      placeholder="What did you learn? (optional)"
+                      id={`learning-${e.id}`}
+                    />
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        act('record_result', {
+                          experimentId: e.id,
+                          result: (
+                            document.querySelector(
+                              `#result-${e.id}`,
+                            ) as HTMLInputElement
+                          ).value,
+                          evidence: (
+                            document.querySelector(
+                              `#evidence-${e.id}`,
+                            ) as HTMLInputElement
+                          ).value,
+                          learning: (
+                            document.querySelector(
+                              `#learning-${e.id}`,
+                            ) as HTMLInputElement
+                          ).value,
+                        })
+                      }
+                    >
+                      Record
+                    </Button>
+                  </div>
+                )}
+                {e.status === 'complete' && (
+                  <p className="learning">
+                    {e.result}/{e.target} · {e.learning}
+                    <br />
+                    <small>{e.evidence}</small>
+                  </p>
+                )}
+              </div>
+            ))}
+            {r.status !== 'complete' &&
+              r.experiments.some((e) => e.status === 'complete') &&
+              !r.experiments.some((e) => e.status === 'running') && (
+                <Button
+                  variant="outline"
+                  onClick={() => act('close_round', { roundId: r.id })}
+                >
+                  Close round and keep unstarted ideas
+                </Button>
+              )}
+          </article>
+        ))}
+    </section>
+  );
+}
+function Outreach({
+  b,
+  act,
+  form,
+  setForm,
+  gmailReady,
+  aiReady,
+}: {
+  b: BusinessDocument;
+  act: Act;
+  form: FormState;
+  setForm: SetForm;
+  gmailReady: boolean;
+  aiReady: boolean;
+}) {
+  return (
+    <section className="panel">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow">FIRST EXECUTION CHANNEL</p>
+          <h2>Reviewed one-to-one outreach</h2>
+          <p className="muted">
+            Add a real fit reason, review each draft, approve each recipient,
+            then choose send. Planning never sends.
+          </p>
+        </div>
+        <Mail />
+      </div>
+      <div className="prospect-form">
+        {['name', 'email', 'company', 'reason', 'source'].map((k) => (
           <Input
-            id="key"
-            type="password"
-            autoComplete="off"
-            placeholder="OpenAI API key"
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
+            key={k}
+            placeholder={k[0].toUpperCase() + k.slice(1)}
+            value={form[k] || ''}
+            onChange={(e) => setForm({ ...form, [k]: e.target.value })}
+          />
+        ))}
+        <Button
+          onClick={() =>
+            act('add_prospect', {
+              name: form.name,
+              email: form.email,
+              company: form.company,
+              reason: form.reason,
+              source: form.source,
+            })
+          }
+        >
+          Add prospect
+        </Button>
+      </div>
+      <Button
+        variant="outline"
+        disabled={!aiReady || b.mode === 'demo'}
+        onClick={() => act('discover_prospects')}
+      >
+        Research 3–5 sourced candidates
+      </Button>
+      {b.outreach.prospects.map((p) => {
+        const d = b.outreach.drafts.find((d) => d.prospectId === p.id);
+        return (
+          <article className="prospect" key={p.id}>
+            <div className="prospect-head">
+              <div>
+                <h3>
+                  {p.name} · {p.company}
+                </h3>
+                <p className="small muted">
+                  {p.email || 'Email needed — find and verify before approval'}{' '}
+                  · {p.source}
+                </p>
+              </div>
+              <span
+                className={`pill ${p.status === 'replied' ? 'green' : p.status === 'uncertain' ? 'amber' : ''}`}
+              >
+                {p.status}
+              </span>
+            </div>
+            <p>{p.reason}</p>
+            {!p.email && (
+              <div className="action-row">
+                <Input
+                  id={`prospect-email-${p.id}`}
+                  type="email"
+                  placeholder="Verified recipient email"
+                />
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    act('update_prospect_email', {
+                      prospectId: p.id,
+                      email: (
+                        document.querySelector(
+                          `#prospect-email-${p.id}`,
+                        ) as HTMLInputElement
+                      ).value,
+                    })
+                  }
+                >
+                  Save email
+                </Button>
+              </div>
+            )}
+            {!d ? (
+              <Button
+                variant="outline"
+                onClick={() => act('draft_outreach', { prospectId: p.id })}
+              >
+                Create draft
+              </Button>
+            ) : (
+              <>
+                <label htmlFor={`subject-${p.id}`}>Subject</label>
+                <Input
+                  id={`subject-${p.id}`}
+                  defaultValue={d.subject}
+                  readOnly={p.status !== 'drafted'}
+                />
+                <label htmlFor={`body-${p.id}`}>Message</label>
+                <Textarea
+                  id={`body-${p.id}`}
+                  defaultValue={d.body}
+                  readOnly={p.status !== 'drafted'}
+                />
+                {p.status === 'drafted' && (
+                  <Button
+                    onClick={() =>
+                      act('approve_outreach', {
+                        prospectId: p.id,
+                        subject: (
+                          document.querySelector(
+                            `#subject-${p.id}`,
+                          ) as HTMLInputElement
+                        ).value,
+                        body: (
+                          document.querySelector(
+                            `#body-${p.id}`,
+                          ) as HTMLTextAreaElement
+                        ).value,
+                      })
+                    }
+                  >
+                    <Check size={14} /> Approve this recipient
+                  </Button>
+                )}
+                {p.status === 'approved' && (
+                  <Button
+                    disabled={!gmailReady}
+                    onClick={() => act('send_approved', { prospectId: p.id })}
+                  >
+                    <Send size={14} /> Send approved email
+                  </Button>
+                )}
+                {p.status === 'uncertain' && (
+                  <Button
+                    variant="outline"
+                    onClick={() => act('reconcile_send', { prospectId: p.id })}
+                  >
+                    Reconcile in Gmail
+                  </Button>
+                )}
+              </>
+            )}
+            {(p.replyCount || 0) > 0 && (
+              <div className="reply">
+                <strong>{p.replyCount} reply</strong>
+                {p.snippets?.map((s: string) => (
+                  <p key={s}>{s}</p>
+                ))}
+              </div>
+            )}
+          </article>
+        );
+      })}
+      {b.outreach.prospects.some((p) => p.threadId) && (
+        <Button variant="outline" onClick={() => act('sync_replies')}>
+          Check replies now
+        </Button>
+      )}
+    </section>
+  );
+}
+function Reviews({ b, act }: { b: BusinessDocument; act: Act }) {
+  return (
+    <section className="panel">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow">WEEKLY REVIEW</p>
+          <h2>Turn results into decisions</h2>
+          <p className="muted">
+            Generated on demand from saved evidence. There is no background
+            scheduler.
+          </p>
+        </div>
+        <RefreshCw />
+      </div>
+      <Button onClick={() => act('generate_review')}>
+        Generate this week’s review
+      </Button>
+      {b.reviews.map((r) => (
+        <article className="review" key={r.id}>
+          <div>
+            <p className="eyebrow">
+              {new Date(r.periodStart).toLocaleDateString()} —{' '}
+              {new Date(r.periodEnd).toLocaleDateString()}
+            </p>
+            <h3>{r.summary}</h3>
+          </div>
+          <div>
+            <strong>Wins</strong>
+            {r.wins.length ? (
+              r.wins.map((x: string) => <p key={x}>• {x}</p>)
+            ) : (
+              <p className="muted">None recorded.</p>
+            )}
+            <strong>Misses</strong>
+            {r.misses.length ? (
+              r.misses.map((x: string) => <p key={x}>• {x}</p>)
+            ) : (
+              <p className="muted">None recorded.</p>
+            )}
+            <strong>Decisions</strong>
+            {r.decisions.map((x: string) => (
+              <p key={x}>• {x}</p>
+            ))}
+          </div>
+          <small>
+            Next review due {new Date(r.nextReviewDue).toLocaleDateString()}
+          </small>
+        </article>
+      ))}
+    </section>
+  );
+}
+function Connections(p: {
+  keyValue: string;
+  gmail: string;
+  ga4: string;
+  account: string;
+  setKey: (v: string) => void;
+  setGmail: (v: string) => void;
+  setGa4: (v: string) => void;
+  form: FormState;
+  setForm: SetForm;
+  act: Act;
+}) {
+  return (
+    <section className="panel">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow">SESSION CONNECTIONS</p>
+          <h2>Bring your own accounts</h2>
+          <p className="muted">
+            Tokens stay in this browser tab and are never included in saved
+            business data.
+          </p>
+        </div>
+        <KeyRound />
+      </div>
+      <div className="connection-card">
+        <h3>OpenAI</h3>
+        <p className="small muted">
+          Live web research and tailored drafts · gpt-5.4-mini
+        </p>
+        <Input
+          type="password"
+          autoComplete="off"
+          placeholder="OpenAI API key"
+          value={p.keyValue}
+          onChange={(e) => p.setKey(e.target.value)}
+        />
+      </div>
+      <div className="connection-card">
+        <h3>Gmail</h3>
+        <p className="small muted">
+          OAuth token with gmail.send and gmail.readonly. Sending still requires
+          per-recipient approval.
+        </p>
+        <Input
+          type="password"
+          autoComplete="off"
+          placeholder="Gmail OAuth bearer token"
+          value={p.gmail}
+          onChange={(e) => p.setGmail(e.target.value)}
+        />
+        <Button variant="outline" onClick={() => p.act('verify_gmail')}>
+          Verify account
+        </Button>
+        {p.account && (
+          <span className="connected">
+            <Check size={14} /> {p.account}
+          </span>
+        )}
+      </div>
+      <div className="connection-card">
+        <h3>Google Analytics 4</h3>
+        <p className="small muted">
+          OAuth token with analytics.readonly. Key events remain labeled as key
+          events.
+        </p>
+        <Input
+          type="password"
+          autoComplete="off"
+          placeholder="GA4 OAuth bearer token"
+          value={p.ga4}
+          onChange={(e) => p.setGa4(e.target.value)}
+        />
+        <Input
+          placeholder="GA4 property ID"
+          value={p.form.propertyId || ''}
+          onChange={(e) => p.setForm({ ...p.form, propertyId: e.target.value })}
+        />
+        <div className="action-row">
+          <Input
+            type="date"
+            value={p.form.startDate || ''}
+            onChange={(e) =>
+              p.setForm({ ...p.form, startDate: e.target.value })
+            }
+          />
+          <Input
+            type="date"
+            value={p.form.endDate || ''}
+            onChange={(e) => p.setForm({ ...p.form, endDate: e.target.value })}
           />
           <Button
             variant="outline"
-            onClick={() => {
-              setKey('');
-              setShowKey(false);
-            }}
+            onClick={() =>
+              p.act('import_ga4', {
+                propertyId: p.form.propertyId,
+                startDate: p.form.startDate,
+                endDate: p.form.endDate,
+              })
+            }
           >
-            Disconnect
+            Import report
           </Button>
-          <Button onClick={() => setShowKey(false)}>Done</Button>
-        </section>
-      )}
-      <main>
-        {error && (
-          <div className="error" role="alert">
-            {error}
-            <Button variant="ghost" size="sm" onClick={() => setError('')}>
-              Dismiss
-            </Button>
-          </div>
-        )}
-        {busy && (
-          <output className="working">
-            <LoaderCircle className="spin" size={17} />
-            {busy === 'research'
-              ? 'Researching the business and public sources. This may take a minute…'
-              : busy === 'plan'
-                ? 'Evaluating channels against your calibrated brief…'
-                : busy === 'run'
-                  ? 'Creating the experiment asset…'
-                  : 'Saving your work…'}
-          </output>
-        )}
-        {loading ? (
-          <div className="setup muted">Loading your workspace…</div>
-        ) : !w || showNew ? (
-          setup
-        ) : (
-          <>
-            <div className="workspace-heading">
-              <div>
-                <p className="eyebrow">
-                  GROWTH WORKSPACE <span className="slash">/</span>{' '}
-                  {w.mode === 'demo' ? 'FICTIONAL DEMO' : 'LIVE RESEARCH'}
-                </p>
-                <h1>{w.name}</h1>
-                <p className="muted">
-                  {w.url.replace(/^https?:\/\//, '')}
-                  <span className="dot">·</span>
-                  {w.calibrated
-                    ? 'Owner calibration complete'
-                    : 'Getting to know your business'}
-                </p>
-              </div>
-              <Button variant="outline" onClick={() => setShowNew(true)}>
-                New research <ArrowUpRight size={16} />
-              </Button>
-            </div>
-            {w.mode === 'demo' && (
-              <div className="demo-banner">
-                <FlaskConical size={17} />
-                <span>
-                  Demo workspace · Fictional research and template drafts.
-                  Nothing is sent or published.
-                </span>
-              </div>
-            )}
-            <div className="workspace-grid">
-              <section className="workspace-main">
-                <Tabs value={tab} onValueChange={(v) => setTab(String(v))}>
-                  <TabsList className="stage-tabs" variant="line">
-                    {stages.map((s, i) => (
-                      <TabsTrigger key={s} value={s}>
-                        <span className="step-number">0{i + 1}</span>
-                        {s}
-                        {s === 'Experiments' && active.length > 0 && (
-                          <span className="count">{active.length}</span>
-                        )}
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                  <TabsContent value="Research">
-                    <div className="section-title">
-                      <div>
-                        <p className="eyebrow">THE BUSINESS BRIEF</p>
-                        <h2>Here’s what we know so far.</h2>
-                        <p className="muted">
-                          A starting point for a conversation with the owner.
-                        </p>
-                      </div>
-                      <Compass className="section-icon" />
-                    </div>
-                    <div className="findings">
-                      {w.findings.map((f, i) => (
-                        <article className="finding" key={i}>
-                          <span className="finding-no">0{i + 1}</span>
-                          <div>
-                            <div className="finding-label">
-                              {f.label}
-                              <span
-                                className={`pill ${f.status !== 'unreviewed' ? 'green' : ''}`}
-                              >
-                                {f.status === 'unreviewed'
-                                  ? 'Needs confirmation'
-                                  : f.status}
-                              </span>
-                            </div>
-                            <p>{f.value}</p>
-                            {f.source.startsWith('https://') ? (
-                              <a
-                                className="source"
-                                href={f.source}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                View source <ArrowUpRight size={13} />
-                              </a>
-                            ) : (
-                              <span className="source">{f.source}</span>
-                            )}
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                    <div className="section-footer">
-                      <p className="muted">
-                        You know the business. Help the agent get it right.
-                      </p>
-                      <Button onClick={() => setTab('Calibration')}>
-                        Calibrate the brief <ArrowRight size={16} />
-                      </Button>
-                    </div>
-                  </TabsContent>
-                  <TabsContent value="Calibration">
-                    <div className="section-title">
-                      <div>
-                        <p className="eyebrow">OWNER CHECK-IN</p>
-                        <h2>What did we get right?</h2>
-                        <p className="muted">
-                          Confirm each finding or edit it. Your corrections
-                          guide the plan.
-                        </p>
-                      </div>
-                      <Hand className="section-icon" />
-                    </div>
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        void act(
-                          'calibrate',
-                          { findings, goal, budget, notes },
-                          'Channels',
-                        );
-                      }}
-                    >
-                      <div className="calibration-list">
-                        {findings.map((f, i) => (
-                          <div className="calibration" key={i}>
-                            <label htmlFor={`f${i}`}>{f.label}</label>
-                            <Textarea
-                              id={`f${i}`}
-                              value={f.value}
-                              onChange={(e) =>
-                                setFindings((fs) =>
-                                  fs.map((x, j) =>
-                                    i === j
-                                      ? {
-                                          ...x,
-                                          value: e.target.value,
-                                          status: 'corrected',
-                                        }
-                                      : x,
-                                  ),
-                                )
-                              }
-                            />
-                            <Button
-                              type="button"
-                              variant={
-                                f.status === 'unreviewed'
-                                  ? 'outline'
-                                  : 'secondary'
-                              }
-                              size="sm"
-                              onClick={() =>
-                                setFindings((fs) =>
-                                  fs.map((x, j) =>
-                                    i === j
-                                      ? {
-                                          ...x,
-                                          status:
-                                            x.value === w.findings[i].value
-                                              ? 'confirmed'
-                                              : 'corrected',
-                                        }
-                                      : x,
-                                  ),
-                                )
-                              }
-                            >
-                              <Check size={14} />
-                              {f.status === 'unreviewed'
-                                ? 'This is accurate'
-                                : f.status === 'corrected'
-                                  ? 'Correction noted'
-                                  : 'Confirmed'}
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="field-grid">
-                        <div>
-                          <label htmlFor="goal">What outcome matters?</label>
-                          <Input
-                            id="goal"
-                            required
-                            value={goal}
-                            onChange={(e) => setGoal(e.target.value)}
-                            placeholder="5 qualified calls in 30 days"
-                          />
-                        </div>
-                        <div>
-                          <label htmlFor="budget">
-                            Time & budget available
-                          </label>
-                          <Input
-                            id="budget"
-                            required
-                            value={budget}
-                            onChange={(e) => setBudget(e.target.value)}
-                            placeholder="$300 and 4 hours per week"
-                          />
-                        </div>
-                      </div>
-                      <label htmlFor="notes">
-                        What else should the agent know?
-                      </label>
-                      <Textarea
-                        id="notes"
-                        value={notes}
-                        onChange={(e) => setNotes(e.target.value)}
-                        placeholder="What has failed before? Any constraints, proof points, or customer insights?"
-                      />
-                      <div className="section-footer">
-                        <p className="muted">
-                          {
-                            findings.filter((f) => f.status !== 'unreviewed')
-                              .length
-                          }{' '}
-                          of {findings.length} findings reviewed
-                        </p>
-                        <Button
-                          disabled={
-                            !!busy ||
-                            findings.some((f) => f.status === 'unreviewed') ||
-                            active.length > 0
-                          }
-                        >
-                          Save calibration <ArrowRight size={16} />
-                        </Button>
-                      </div>
-                      {active.length > 0 && (
-                        <p className="muted small">
-                          Calibration is locked while experiments exist. Start
-                          new research for a fresh brief.
-                        </p>
-                      )}
-                    </form>
-                  </TabsContent>
-                  <TabsContent value="Channels">
-                    <div className="section-title">
-                      <div>
-                        <p className="eyebrow">CHOOSE WHERE TO START</p>
-                        <h2>A few channels. A focused first move.</h2>
-                        <p className="muted">
-                          Run up to two experiments at a time. Targets are
-                          hypotheses.
-                        </p>
-                      </div>
-                      <Radar className="section-icon" />
-                    </div>
-                    {!w.calibrated ? (
-                      <div className="empty">
-                        <Hand />
-                        <h3>First, calibrate the research.</h3>
-                        <p>
-                          The owner’s context makes the channel plan useful.
-                        </p>
-                        <Button onClick={() => setTab('Calibration')}>
-                          Review the brief
-                        </Button>
-                      </div>
-                    ) : !w.channels.length ? (
-                      <div className="empty">
-                        <Sparkles />
-                        <h3>Your brief is ready.</h3>
-                        <p>
-                          Find channels that fit your audience, outcome, and
-                          resources.
-                        </p>
-                        <Button disabled={!!busy} onClick={() => act('plan')}>
-                          Suggest channels <ArrowRight size={16} />
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="channels">
-                        {w.channels.map((c, i) => (
-                          <article className="channel" key={c.id}>
-                            <div className="channel-top">
-                              <span className="rank">
-                                {String(i + 1).padStart(2, '0')}
-                              </span>
-                              <span className="pill">
-                                {i < 2
-                                  ? 'Recommended first'
-                                  : 'Worth exploring'}
-                              </span>
-                              <span className="small muted">{c.effort}</span>
-                            </div>
-                            <h3>{c.name}</h3>
-                            <p className="muted">{c.rationale}</p>
-                            <div className="target">
-                              <CircleDot size={15} />
-                              {c.target} {c.metric.toLowerCase()}
-                            </div>
-                            <div className="channel-bottom">
-                              <p className="small">{c.action}</p>
-                              <Button
-                                variant={i < 2 ? 'default' : 'outline'}
-                                disabled={
-                                  !!busy ||
-                                  c.status !== 'suggested' ||
-                                  active.filter((c) => c.status !== 'reviewed')
-                                    .length >= 2
-                                }
-                                onClick={() =>
-                                  act('run', { channel: c.id }, 'Experiments')
-                                }
-                              >
-                                {c.status === 'suggested'
-                                  ? 'Create draft'
-                                  : 'Started'}
-                                <ArrowUpRight size={15} />
-                              </Button>
-                            </div>
-                          </article>
-                        ))}
-                      </div>
-                    )}
-                  </TabsContent>
-                  <TabsContent value="Experiments">
-                    <div className="section-title">
-                      <div>
-                        <p className="eyebrow">FROM PLAN TO PROGRESS</p>
-                        <h2>Work you can put into the world.</h2>
-                        <p className="muted">
-                          Review the draft, complete the handoff, then measure
-                          the outcome.
-                        </p>
-                      </div>
-                      <FlaskConical className="section-icon" />
-                    </div>
-                    {!active.length ? (
-                      <div className="empty">
-                        <FlaskConical />
-                        <h3>No experiments yet.</h3>
-                        <p>
-                          Pick your first channel to create a reviewable draft.
-                        </p>
-                        <Button onClick={() => setTab('Channels')}>
-                          Explore channels
-                        </Button>
-                      </div>
-                    ) : (
-                      active.map((c) => (
-                        <article className="experiment" key={c.id}>
-                          <div className="experiment-title">
-                            <h3>{c.name}</h3>
-                            <span
-                              className={`pill ${c.status === 'reviewed' ? 'green' : 'amber'}`}
-                            >
-                              {c.status === 'needs_owner'
-                                ? 'Your action needed'
-                                : c.status === 'measuring'
-                                  ? 'Ready to measure'
-                                  : 'Result reviewed'}
-                            </span>
-                          </div>
-                          <details open>
-                            <summary>
-                              Draft asset{' '}
-                              <span className="small muted">
-                                {w.mode === 'demo'
-                                  ? 'Demo template'
-                                  : 'AI draft · verify before use'}
-                              </span>
-                            </summary>
-                            <pre>{c.artifact}</pre>
-                          </details>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() =>
-                              download(`${c.id}-draft.md`, c.artifact || '')
-                            }
-                          >
-                            <Download size={14} />
-                            Download draft
-                          </Button>
-                          {c.status === 'needs_owner' && (
-                            <div className="handoff">
-                              <div className="handoff-title">
-                                <Hand size={18} />
-                                <strong>Over to you</strong>
-                              </div>
-                              <p>{c.handoff}</p>
-                              <p className="small muted">
-                                The MVP creates drafts; posting and sending are
-                                owner actions. Your completion log is
-                                self-reported.
-                              </p>
-                              <label htmlFor={`e-${c.id}`}>
-                                Link or action log
-                              </label>
-                              <Textarea
-                                id={`e-${c.id}`}
-                                placeholder="Where did you publish, or who did you contact?"
-                                value={evidence[c.id] || ''}
-                                onChange={(e) =>
-                                  setEvidence({
-                                    ...evidence,
-                                    [c.id]: e.target.value,
-                                  })
-                                }
-                              />
-                              <Button
-                                disabled={
-                                  !!busy ||
-                                  (evidence[c.id] || '').trim().length < 10
-                                }
-                                onClick={() =>
-                                  act('handoff', {
-                                    channel: c.id,
-                                    evidence: evidence[c.id],
-                                  })
-                                }
-                              >
-                                I’ve done this — continue{' '}
-                                <ArrowRight size={15} />
-                              </Button>
-                            </div>
-                          )}
-                          {c.evidence && (
-                            <p className="evidence small">
-                              <Check size={15} />
-                              Owner action log: {c.evidence}
-                            </p>
-                          )}
-                          {c.status === 'measuring' && (
-                            <div className="measurement">
-                              <h4>What happened?</h4>
-                              <p className="muted">
-                                Target: {c.target} {c.metric.toLowerCase()}.
-                                Record results after your experiment window.
-                              </p>
-                              <label htmlFor={`r-${c.id}`}>{c.metric}</label>
-                              <div className="result-row">
-                                <Input
-                                  id={`r-${c.id}`}
-                                  type="number"
-                                  min="0"
-                                  step="1"
-                                  value={results[c.id] ?? ''}
-                                  onChange={(e) =>
-                                    setResults({
-                                      ...results,
-                                      [c.id]: e.target.value,
-                                    })
-                                  }
-                                />
-                                <Button
-                                  disabled={!!busy || !results[c.id]}
-                                  onClick={() =>
-                                    act('result', {
-                                      channel: c.id,
-                                      result: Number(results[c.id]),
-                                    })
-                                  }
-                                >
-                                  Review result
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-                          {c.learning && (
-                            <div className="learning">
-                              <p className="eyebrow">EXPERIMENT READOUT</p>
-                              <p>{c.learning}</p>
-                            </div>
-                          )}
-                        </article>
-                      ))
-                    )}
-                  </TabsContent>
-                </Tabs>
-              </section>
-              <aside className="context-rail">
-                <div className="rail-card memory-card">
-                  <p className="eyebrow">DURABLE MEMORY</p>
-                  <h3>Context carries forward</h3>
-                  <p className="small muted">
-                    Your confirmed brief and experiment results are saved to your
-                    account and used in later live planning and drafting.
-                  </p>
-                </div>
-                <div className="rail-card">
-                  <p className="eyebrow">THE NORTH STAR</p>
-                  <h3>{w.goal || 'Define your first outcome'}</h3>
-                  <div className="rail-divider" />
-                  <p className="small muted">Resources</p>
-                  <p>{w.budget || 'Set during calibration'}</p>
-                  <p className="small muted">Operating boundary</p>
-                  <p className="small">
-                    Research and draft creation. You handle external publishing,
-                    outreach, and spending.
-                  </p>
-                </div>
-                <div className="rail-card owner-card">
-                  <div className="rail-head">
-                    <Hand size={17} />
-                    <h3>Needs you</h3>
-                    <span className="count">{waiting.length}</span>
-                  </div>
-                  {waiting.length ? (
-                    waiting.map((c) => (
-                      <button
-                        className="queue-item"
-                        key={c.id}
-                        onClick={() => setTab('Experiments')}
-                      >
-                        <span>
-                          {c.name}
-                          <small>Review draft & complete handoff</small>
-                        </span>
-                        <ArrowUpRight size={16} />
-                      </button>
-                    ))
-                  ) : (
-                    <p className="small muted">
-                      {w.calibrated
-                        ? 'No open handoffs.'
-                        : 'Confirm the business brief to unblock planning.'}
-                    </p>
-                  )}
-                </div>
-                <div className="activity">
-                  <p className="eyebrow">ACTIVITY</p>
-                  {w.log.slice(0, 7).map((l, i) => (
-                    <div className="activity-item" key={i}>
-                      <span className="activity-dot" />
-                      <p>
-                        {l.text}
-                        <time>
-                          {new Date(l.at).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </time>
-                      </p>
-                    </div>
-                  ))}
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    download(
-                      'traction-workspace.json',
-                      JSON.stringify(w, null, 2),
-                    )
-                  }
-                >
-                  <Download size={14} />
-                  Export workspace
-                </Button>
-              </aside>
-            </div>
-          </>
-        )}
-      </main>
-      <footer>
-        Traction Lab <span>Research → Calibrate → Experiment → Learn</span>
-      </footer>
-    </div>
+        </div>
+      </div>
+    </section>
   );
 }

@@ -34,7 +34,7 @@ const localBindingConfig = {
     : [],
 };
 
-export default defineConfig(async () => {
+export default defineConfig(async ({ command }) => {
   // Keep Wrangler and Miniflare state project-local. These are non-secret tool
   // settings; application environment belongs in ignored `.env*` files.
   process.env.WRANGLER_WRITE_LOGS ??= 'false';
@@ -54,7 +54,19 @@ export default defineConfig(async () => {
       sites(),
       cloudflare({
         viteEnvironment: { name: 'rsc', childEnvironments: ['ssr'] },
-        config: localBindingConfig,
+        config: {
+          ...localBindingConfig,
+          ...(command === 'serve' && process.env.TRACTION_LOCAL_TURSO_TOKEN
+            ? {
+                vars: {
+                  TURSO_DATABASE_URL:
+                    'libsql://traction-memory-jwarm16.aws-us-east-1.turso.io',
+                  TURSO_AUTH_TOKEN: process.env.TRACTION_LOCAL_TURSO_TOKEN,
+                  ALLOW_DEV_IDENTITY: 'true',
+                },
+              }
+            : {}),
+        },
       }),
     ],
   };

@@ -155,6 +155,268 @@ body {
   font-size: 16px;
   line-height: 1.6;
 }
+.owner-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  min-height: calc(100vh - 78px);
+}
+.business-nav {
+  background: #fff;
+  border-right: 1px solid var(--border);
+  padding: 32px 20px;
+}
+.business-item {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 11px;
+  border-radius: 9px;
+  display: flex;
+  gap: 10px;
+  text-align: left;
+  margin-bottom: 5px;
+  color: #273245;
+}
+.business-item.active {
+  background: #eaf0fc;
+  color: #174fc8;
+}
+.business-item span {
+  display: flex;
+  flex-direction: column;
+  font-weight: 600;
+}
+.business-item small {
+  font-weight: 400;
+  color: #718096;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.business-nav > button:last-of-type {
+  width: 100%;
+  margin-top: 16px;
+}
+.nav-note {
+  display: flex;
+  gap: 9px;
+  color: #758195;
+  font-size: 12px;
+  line-height: 1.45;
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.owner-main {
+  padding: 38px 42px 70px;
+  max-width: 1250px;
+  width: 100%;
+  margin: 0 auto;
+}
+.owner-tabs {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 22px;
+  margin-bottom: 24px;
+  overflow: auto;
+}
+.queue-count {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 20px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.queue-count strong {
+  font-size: 26px;
+}
+.queue-count span {
+  font-size: 12px;
+  color: #6b7789;
+}
+.panel {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px;
+}
+.today-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.focus-card,
+.connection-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+}
+.focus-card p {
+  min-height: 78px;
+  color: #687487;
+  margin: 8px 0;
+}
+.card-index {
+  font: 600 12px monospace;
+  color: #255fea;
+}
+.diagnosis {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  background: #f4f7fc;
+  padding: 20px;
+  border-radius: 12px;
+  margin-top: 20px;
+}
+.profile-grid,
+.signal-form,
+.prospect-form,
+.action-row,
+.source-row,
+.result-entry {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+}
+.profile-grid > div {
+  flex: 1;
+}
+.memory-row,
+.round,
+.prospect,
+.review {
+  border-top: 1px solid var(--border);
+  padding: 22px 0;
+}
+.memory-meta,
+.round-head,
+.prospect-head {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.source-row input {
+  flex: 1;
+}
+.data-table {
+  margin-top: 22px;
+}
+.data-row {
+  display: grid;
+  grid-template-columns: 80px 1fr 1.5fr;
+  gap: 18px;
+  border-top: 1px solid var(--border);
+  padding: 14px;
+}
+.data-row strong {
+  font-size: 24px;
+}
+.data-row span {
+  display: flex;
+  flex-direction: column;
+}
+.data-row small {
+  color: #748094;
+}
+.experiment {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 18px;
+  align-items: center;
+  background: #f8f9fb;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  margin-top: 10px;
+}
+.learning {
+  max-width: 340px;
+}
+.prospect-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 2fr 1fr auto;
+}
+.prospect textarea {
+  min-height: 140px !important;
+}
+.reply,
+.connected {
+  background: #e9f7ef;
+  color: #226a49;
+  padding: 10px;
+  border-radius: 8px;
+  margin-top: 12px;
+}
+.connection-card {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: 220px minmax(240px, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+}
+.connection-card p {
+  grid-column: 1;
+}
+.review {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr auto;
+  gap: 20px;
+}
+.panel details {
+  margin: 20px 0;
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.panel summary {
+  font-weight: 600;
+  cursor: pointer;
+}
+@media (max-width: 900px) {
+  .owner-layout {
+    display: block;
+  }
+  .business-nav {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .owner-main {
+    padding: 24px 16px;
+  }
+  .today-grid,
+  .diagnosis {
+    grid-template-columns: 1fr;
+  }
+  .prospect-form {
+    grid-template-columns: 1fr 1fr;
+  }
+  .connection-card {
+    grid-template-columns: 1fr;
+  }
+  .connection-card p {
+    grid-column: auto;
+  }
+  .profile-grid,
+  .signal-form,
+  .source-row,
+  .result-entry {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .review {
+    grid-template-columns: 1fr;
+  }
+  .topbar {
+    padding: 0 18px;
+  }
+  .private {
+    display: none;
+  }
+}
 button,
 a,
 input,
@@ -936,5 +1198,82 @@ footer {
 @media (prefers-reduced-motion: reduce) {
   .spin {
     animation: none;
+  }
+}
+/* Owner workspace overrides kept last because legacy selectors above remain for migration safety. */
+.owner-main .panel {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px;
+}
+.owner-main .section-title {
+  padding: 0;
+  margin: 0 0 24px;
+  border: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.owner-main .experiment {
+  margin: 10px 0 0;
+  padding: 16px;
+}
+.owner-main .experiment-action {
+  color: #334155;
+  margin: 8px 0;
+}
+.owner-main .round {
+  padding: 22px 0;
+}
+.owner-main .queue-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+  border: 1px solid var(--border);
+  background: #fff;
+  padding: 12px;
+  border-radius: 9px;
+  margin: 7px 0;
+}
+.owner-main .queue-item span {
+  display: flex;
+  flex-direction: column;
+}
+.owner-main .queue-item small {
+  color: #6b7789;
+}
+.owner-queue {
+  background: #f4f7fc;
+  border: 1px solid #dce5f5;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+.owner-main input[readonly],
+.owner-main textarea[readonly] {
+  background: #f4f6f9 !important;
+  color: #536174;
+}
+.owner-main .action-row {
+  margin: 12px 0;
+}
+.owner-main .prospect-form + button {
+  margin: 14px 0 8px;
+}
+@media (max-width: 900px) {
+  .owner-main .panel {
+    padding: 20px;
+  }
+  .owner-main .experiment {
+    grid-template-columns: 1fr;
+  }
+  .owner-main .section-title {
+    padding: 0;
+  }
+  .owner-main .result-entry {
+    width: 100%;
   }
 }

@@ -1,193 +1,464 @@
-export type Finding = {
+export type Provenance = {
+  source: string;
+  observedAt: string;
+  confidence: 'low' | 'medium' | 'high';
+};
+export type Fact = Provenance & {
+  id: string;
   label: string;
   value: string;
-  source: string;
   status: 'unreviewed' | 'confirmed' | 'corrected';
 };
-export type Channel = {
+export type Signal = Provenance & {
   id: string;
-  name: string;
-  rationale: string;
-  effort: string;
+  metric: string;
+  value: number;
+  period: string;
+  note: string;
+};
+export type Diagnosis = {
+  bottleneck: string;
+  evidence: string[];
+  unknowns: string[];
+  recommendation: string;
+  generatedAt: string;
+};
+export type Experiment = {
+  id: string;
+  channel: string;
+  hypothesis: string;
+  action: string;
   metric: string;
   target: number;
-  action: string;
-  handoff: string;
-  status: 'suggested' | 'needs_owner' | 'measuring' | 'reviewed';
-  artifact?: string;
-  evidence?: string;
+  status: 'draft' | 'running' | 'complete';
+  startedAt?: string;
+  endedAt?: string;
   result?: number;
+  evidence?: string;
   learning?: string;
 };
-export type Workspace = {
+export type ExperimentProposal = Pick<
+  Experiment,
+  'channel' | 'hypothesis' | 'action' | 'metric' | 'target'
+>;
+export type Round = {
+  id: string;
+  name: string;
+  createdAt: string;
+  status: 'planning' | 'active' | 'complete';
+  experiments: Experiment[];
+  briefSnapshot?: {
+    goal: string;
+    budget: string;
+    notes: string;
+    facts: Fact[];
+    diagnosis: Diagnosis;
+  };
+  rationale?: string;
+};
+export type Review = {
+  id: string;
+  periodStart: string;
+  periodEnd: string;
+  createdAt: string;
+  summary: string;
+  wins: string[];
+  misses: string[];
+  decisions: string[];
+  nextReviewDue: string;
+};
+export type Prospect = {
+  id: string;
+  name: string;
+  email: string;
+  company: string;
+  reason: string;
+  source: string;
+  addedAt: string;
+  status:
+    | 'new'
+    | 'drafted'
+    | 'approved'
+    | 'sending'
+    | 'sent'
+    | 'replied'
+    | 'failed'
+    | 'uncertain';
+  approvedAt?: string;
+  approvedFrom?: string;
+  messageId?: string;
+  gmailId?: string;
+  threadId?: string;
+  sentAt?: string;
+  sendAttemptedAt?: string;
+  replyCount?: number;
+  lastReplyAt?: string | null;
+  snippets?: string[];
+  error?: string;
+};
+export type OutreachDraft = {
+  prospectId: string;
+  subject: string;
+  body: string;
+  createdAt: string;
+  reviewedAt?: string;
+};
+export type BusinessDocument = {
+  version: 2;
+  id: string;
   name: string;
   url: string;
   mode: 'demo' | 'live';
-  findings: Finding[];
+  createdAt: string;
+  updatedAt: string;
   goal: string;
   budget: string;
   notes: string;
-  calibrated: boolean;
-  channels: Channel[];
+  facts: Fact[];
+  signals: Signal[];
+  diagnosis?: Diagnosis;
+  rounds: Round[];
+  reviews: Review[];
+  outreach: { prospects: Prospect[]; drafts: OutreachDraft[] };
   log: { text: string; at: string }[];
 };
-export function log(w: Workspace, text: string) {
-  w.log.unshift({ text, at: new Date().toISOString() });
+
+const iso = () => new Date().toISOString();
+export const uid = (prefix: string) => `${prefix}_${crypto.randomUUID()}`;
+export function addLog(business: BusinessDocument, text: string) {
+  const at = iso();
+  business.log.unshift({ text, at });
+  business.updatedAt = at;
 }
-export function demo(): Workspace {
+
+export function demoBusiness(): BusinessDocument {
+  const now = iso();
+  const facts: [string, string, Provenance['confidence']][] = [
+    [
+      'Offer',
+      'Monthly bookkeeping and cash-flow guidance for creative agencies.',
+      'high',
+    ],
+    [
+      'Ideal customer',
+      'US creative agency owners with 5–20 employees.',
+      'medium',
+    ],
+    [
+      'Current traction',
+      'Most customers arrive through founder referrals.',
+      'medium',
+    ],
+  ];
   return {
+    version: 2,
+    id: uid('biz'),
     name: 'Cedar & Co.',
     url: 'https://cedar.example',
     mode: 'demo',
+    createdAt: now,
+    updatedAt: now,
     goal: 'Book 5 qualified discovery calls in 30 days',
     budget: '$300 and 4 hours per week',
-    notes: '',
-    calibrated: false,
-    channels: [],
+    notes: 'Fictional demo business.',
+    facts: facts.map(([label, value, confidence]) => ({
+      id: uid('fact'),
+      label,
+      value,
+      source: 'Fictional demo brief',
+      observedAt: now,
+      confidence,
+      status: 'unreviewed',
+    })),
+    signals: [
+      {
+        id: uid('sig'),
+        metric: 'Qualified conversations',
+        value: 2,
+        period: 'Last 30 days',
+        note: 'Owner-entered demo signal',
+        source: 'Fictional demo data',
+        observedAt: now,
+        confidence: 'low',
+      },
+    ],
+    rounds: [],
+    reviews: [],
+    outreach: { prospects: [], drafts: [] },
     log: [
-      {
-        text: 'Example research loaded. This is a fictional business; no live search was run.',
-        at: new Date().toISOString(),
-      },
-    ],
-    findings: [
-      {
-        label: 'Offer',
-        value:
-          'Monthly bookkeeping and cash-flow guidance for small creative agencies.',
-        source: 'Fictional demo brief',
-        status: 'unreviewed',
-      },
-      {
-        label: 'Ideal customer',
-        value: 'US-based creative agency owners with 5–20 employees.',
-        source: 'Demo assumption — confirm with owner',
-        status: 'unreviewed',
-      },
-      {
-        label: 'Differentiation',
-        value:
-          'Agency-specific reporting and a monthly conversation with a dedicated bookkeeper.',
-        source: 'Fictional demo brief',
-        status: 'unreviewed',
-      },
-      {
-        label: 'Current traction',
-        value:
-          'Most new customers come through founder referrals; other channels are untested.',
-        source: 'Demo assumption — confirm with owner',
-        status: 'unreviewed',
-      },
+      { text: 'Fictional demo loaded. No live research or messages.', at: now },
     ],
   };
 }
-export function validateCalibration(w: Workspace) {
-  if (
-    !w.findings.length ||
-    w.findings.some((f) => f.status === 'unreviewed' || !f.value.trim())
-  )
-    throw new Error('Review every finding before planning.');
-  if (!w.goal.trim() || !w.budget.trim())
-    throw new Error('Add an outcome and resource limit.');
-}
-export function demoChannels(w: Workspace): Channel[] {
-  const audience =
-    w.findings.find((f) => f.label === 'Ideal customer')?.value ||
-    'your ideal customers';
-  return [
-    {
-      id: 'outreach',
-      name: 'Founder-led outreach',
-      rationale: `A small, targeted conversation test for ${audience}`,
-      effort: '3 hours · $0',
-      metric: 'Qualified calls booked',
-      target: 5,
-      action: 'Create an outreach message and follow-up',
-      handoff:
-        'Choose 10 appropriate contacts, personalize the draft, and send it from your own account. Add a sent log or a brief description of what you sent.',
-    },
-    {
-      id: 'partners',
-      name: 'Referral partnerships',
-      rationale:
-        'Build on the existing referral motion with complementary service providers.',
-      effort: '2 hours · $0',
-      metric: 'Partner conversations',
-      target: 3,
-      action: 'Write a partner invitation and referral offer',
-      handoff:
-        'Choose 5 complementary partners and send the reviewed invitation. Record who you contacted.',
-    },
-    {
-      id: 'content',
-      name: 'Founder content',
-      rationale:
-        'Turn owner expertise into an explicit invitation to start a conversation.',
-      effort: '2 hours · $0',
-      metric: 'Qualified inbound conversations',
-      target: 3,
-      action: 'Draft a practical founder post',
-      handoff:
-        'Review the post for accuracy and publish it on your preferred professional network. Paste the post URL.',
-    },
-    {
-      id: 'search',
-      name: 'Search-led content',
-      rationale:
-        'Test a narrow customer question before investing in a larger content program.',
-      effort: '4 hours · $0',
-      metric: 'Qualified inquiries',
-      target: 2,
-      action: 'Create a search article outline',
-      handoff:
-        'Validate search demand, write and publish the article using the outline. Paste the published URL. Search results may take longer than this first experiment.',
-    },
-    {
-      id: 'community',
-      name: 'Community participation',
-      rationale:
-        'Learn customer language through useful, relevant conversations.',
-      effort: '2 hours · $0',
-      metric: 'Customer conversations',
-      target: 4,
-      action: 'Draft a helpful discussion contribution',
-      handoff:
-        'Find a relevant community, check its rules, adapt the draft, and contribute. Record the community and discussion URL.',
-    },
-  ].map((c) => ({ ...c, status: 'suggested' }));
-}
-export function demoArtifact(w: Workspace, c: Channel) {
-  const offer = w.findings[0]?.value || '';
-  const diff = w.findings[2]?.value || '';
-  const intro = `DEMO TEMPLATE · Review and personalize before use\n\nBusiness: ${w.name}\nOffer: ${offer}\nGoal: ${w.goal}\nOwner context: ${w.notes || 'None added'}\n\n`;
-  const drafts: Record<string, string> = {
-    outreach: `Subject: A question about your agency's finances\n\nHi there,\n\nI run ${w.name}. We help with ${offer.charAt(0).toLowerCase() + offer.slice(1)}\n\nHow are you handling this today, and where does it take more time than it should? If it is relevant, I would be happy to compare notes in a short conversation.\n\nFollow-up, after 5 business days:\nOne follow-up on my note. Is this an active priority, or should I leave it here?\n\nBefore sending: add a real recipient name and a verified reason their business fits.`,
-    partners: `Subject: Could our clients benefit from knowing each other?\n\nI run ${w.name}. ${offer}\n\n${diff}\n\nI would like to understand the kinds of clients you support and see whether there is a useful fit. Would you be open to a brief conversation? No referral arrangement assumed—we can agree terms if there is a fit.`,
-    content: `A useful question for agency owners: what would make your monthly financial review more useful?\n\nThree things to bring to that conversation:\n• Your current cash position.\n• Upcoming commitments.\n• The decisions you need to make this month.\n\nAt ${w.name}, our work is ${offer.charAt(0).toLowerCase() + offer.slice(1)}\n\nWhat is the one question you wish your reports answered?`,
-    search: `Working title: A monthly financial review checklist for creative agency owners\n\nReader: ${w.findings[1]?.value}\n\n1. Explain the decision the reader needs to make.\n2. List the documents needed for a monthly review.\n3. Walk through cash, commitments, and open questions.\n4. Add an owner-approved example using real, anonymized information.\n5. Invite readers to discuss their process with ${w.name}.\n\nValidation: confirm demand and competing pages before publication. Do not invent search volume or results.`,
-    community: `Discussion starter: What do you wish you understood better about your agency's monthly numbers?\n\nI work on ${offer.charAt(0).toLowerCase() + offer.slice(1)} I'd be interested to learn which questions keep coming up for owners here. Happy to share a practical review checklist if helpful.\n\nDisclose your affiliation and follow the community rules. Avoid unsolicited promotion.`,
-  };
-  return intro + drafts[c.id];
-}
-export function completeHandoff(c: Channel, evidence: string) {
-  if (c.status !== 'needs_owner')
-    throw new Error('This experiment is not waiting for an owner action.');
-  if (evidence.trim().length < 10)
-    throw new Error(
-      'Add a link or a brief action log (at least 10 characters).',
+
+// Diagnose only the observed funnel. Missing values never become zero, and
+// metrics from different reporting periods cannot establish a conversion gap.
+export function diagnose(business: BusinessDocument): Diagnosis {
+  const signals = [...business.signals]
+    .filter((s) => Number.isFinite(s.value) && s.value >= 0)
+    .sort((a, b) => b.observedAt.localeCompare(a.observedAt));
+  const demand = signals.find((s) =>
+    /^(sessions|visitors|website visitors|traffic|active users)$/i.test(
+      s.metric.trim(),
+    ),
+  );
+  const conversion = signals.find((s) =>
+    /^(qualified (conversations|leads|calls)|leads|new customers|sales|conversions|booked calls)$/i.test(
+      s.metric.trim(),
+    ),
+  );
+  const churn = signals.find((s) =>
+    /^(churned customers|lost customers|cancellations)$/i.test(s.metric.trim()),
+  );
+  const unknowns: string[] = [];
+  if (!demand)
+    unknowns.push('Traffic or audience reach has not been measured.');
+  if (!conversion)
+    unknowns.push(
+      'Qualified leads or conversions have not been measured; their value is unknown.',
     );
-  c.evidence = evidence.trim();
-  c.status = 'measuring';
+  if (
+    demand &&
+    conversion &&
+    demand.period.trim().toLowerCase() !==
+      conversion.period.trim().toLowerCase()
+  )
+    unknowns.push(
+      'Demand and conversion metrics cover different periods; no conversion rate can be inferred.',
+    );
+  if (business.facts.some((f) => f.status === 'unreviewed'))
+    unknowns.push('Some research facts still need owner confirmation.');
+  if (signals.some((s) => s.confidence === 'low'))
+    unknowns.push(
+      'Some evidence is low confidence; verify it before increasing spend.',
+    );
+  unknowns.push(
+    'Channel attribution and cost per qualified outcome are not yet established by these totals.',
+  );
+  let bottleneck = 'Evidence gap';
+  let recommendation =
+    'Measure demand and qualified outcomes for the same date range, then run one small test. Current evidence cannot locate the bottleneck.';
+  const samePeriod =
+    demand &&
+    conversion &&
+    demand.period.trim().toLowerCase() ===
+      conversion.period.trim().toLowerCase();
+  if (samePeriod && demand.value > 0 && conversion.value === 0) {
+    bottleneck = 'Possible conversion gap';
+    recommendation =
+      'Verify conversion tracking, then test one clearer offer and call to action. Observed traffic with zero recorded outcomes is a clue, not proof of the cause.';
+  } else if (samePeriod && demand.value === 0 && conversion.value === 0) {
+    bottleneck = 'Possible demand gap';
+    recommendation =
+      'Verify traffic tracking and test one tightly scoped audience channel before investing in a larger campaign.';
+  } else if (conversion && conversion.value > 0) {
+    bottleneck = 'Acquisition repeatability to test';
+    recommendation =
+      'Trace the observed qualified outcomes to their source. Repeat a small version of that channel and measure cost and effort; these totals alone do not prove which channel works.';
+  }
+  if (churn && churn.value > 0) {
+    unknowns.push(
+      `${churn.value} lost customers were recorded for ${churn.period}; customer base size and cancellation reasons are needed to judge retention.`,
+    );
+  }
+  const diagnosis: Diagnosis = {
+    bottleneck,
+    evidence: signals
+      .slice(0, 8)
+      .map(
+        (s) =>
+          `${s.metric}: ${s.value} (${s.period}; ${s.source}; observed ${s.observedAt.slice(0, 10)}; ${s.confidence} confidence)`,
+      ),
+    unknowns,
+    recommendation,
+    generatedAt: iso(),
+  };
+  business.diagnosis = diagnosis;
+  addLog(business, `Bottleneck diagnosis updated: ${bottleneck}.`);
+  return diagnosis;
 }
-export function reviewResult(c: Channel, result: number) {
-  if (c.status !== 'measuring')
-    throw new Error('Complete the owner action before recording results.');
-  if (!Number.isInteger(result) || result < 0)
-    throw new Error('Enter a non-negative whole number.');
-  c.result = result;
-  c.status = 'reviewed';
-  c.learning =
-    result >= c.target
-      ? `Target met (${result}/${c.target}). Repeat a small test to check whether this result is reproducible before increasing effort.`
-      : `Below target (${result}/${c.target}). Review execution and audience fit, then change one variable for the next test. This result alone does not establish why.`;
+
+export function createRound(
+  business: BusinessDocument,
+  name: string,
+  proposals?: ExperimentProposal[],
+): Round {
+  if (business.rounds.some((r) => r.status !== 'complete'))
+    throw new Error('Close the current round before starting another.');
+  if (!business.goal.trim() || !business.budget.trim())
+    throw new Error('Set a goal and a time or money budget before planning.');
+  if (!business.facts.some((f) => f.status !== 'unreviewed'))
+    throw new Error('Confirm at least one business fact before planning.');
+  const diagnosis = diagnose(business);
+  const completed = business.rounds
+    .flatMap((r) => r.experiments)
+    .filter((e) => e.status === 'complete' && Number.isFinite(e.result));
+  const previous = new Map(completed.map((e) => [e.channel, e]));
+  const audience =
+    business.facts.find(
+      (f) =>
+        f.status !== 'unreviewed' && /customer|audience|buyer/i.test(f.label),
+    )?.value || 'the owner-confirmed target audience';
+  const choices: ExperimentProposal[] = proposals || [
+    {
+      channel: 'Founder-led email outreach',
+      hypothesis: `A personal, researched message to ${audience} can generate qualified replies.`,
+      action:
+        'Research ten relevant prospects, cite why each fits, and prepare individual messages for owner approval. Track positive replies separately from all replies.',
+      metric: 'Positive replies',
+      target: 3,
+    },
+    {
+      channel: 'Customer referrals',
+      hypothesis:
+        'A specific introduction request to existing advocates can produce qualified conversations.',
+      action:
+        'Owner: select five customers or trusted contacts who can credibly recommend the offer. Prepare a short introduction request and log the responses.',
+      metric: 'Qualified introductions',
+      target: 2,
+    },
+    {
+      channel: 'Offer page conversations',
+      hypothesis:
+        'A clearer offer and one concrete call to action can turn interested visitors into conversations.',
+      action:
+        'Draft one headline, proof point, and call to action using confirmed business facts. Owner: publish the approved copy and record visits and qualified conversations for the same period.',
+      metric: 'Qualified conversations',
+      target: 3,
+    },
+    {
+      channel: 'Partner introductions',
+      hypothesis:
+        'A complementary service provider already reaching this audience may refer suitable buyers.',
+      action:
+        'Research five complementary providers and draft a specific mutual referral proposal. Owner: approve partners and contact details before any outreach.',
+      metric: 'Partner conversations',
+      target: 2,
+    },
+    {
+      channel: 'Founder expertise content',
+      hypothesis:
+        'A useful answer to one narrow customer problem can start relevant sales conversations.',
+      action:
+        'Draft one practical post grounded in the confirmed offer. Owner: choose an existing audience, publish the approved post, and record qualified inbound conversations.',
+      metric: 'Qualified inbound conversations',
+      target: 2,
+    },
+  ];
+  if (choices.length < 3 || choices.length > 8)
+    throw new Error('A round needs three to eight channel suggestions.');
+  for (const choice of choices) {
+    if (
+      ![choice.channel, choice.hypothesis, choice.action, choice.metric].every(
+        (s) => typeof s === 'string' && s.trim(),
+      ) ||
+      !Number.isFinite(choice.target) ||
+      choice.target <= 0
+    )
+      throw new Error(
+        'Every experiment needs a channel, hypothesis, action, metric, and positive target.',
+      );
+  }
+  const experiments: Experiment[] = choices.map((choice) => {
+    const last = previous.get(choice.channel);
+    const adaptation =
+      !proposals && last
+        ? last.result! >= last.target
+          ? ` Prior test met its target (${last.result}/${last.target} ${last.metric}); repeat its recorded approach with one controlled audience change. Owner learning: ${last.learning || last.evidence || 'not recorded'}.`
+          : ` Prior test missed its target (${last.result}/${last.target} ${last.metric}); review the evidence and change one element before retrying. Owner learning: ${last.learning || last.evidence || 'not recorded'}.`
+        : '';
+    return {
+      ...choice,
+      action: choice.action + adaptation,
+      id: uid('exp'),
+      status: 'draft',
+    };
+  });
+  const round: Round = {
+    id: uid('round'),
+    name: name.trim() || `Round ${business.rounds.length + 1}`,
+    createdAt: iso(),
+    status: 'planning',
+    experiments,
+    briefSnapshot: structuredClone({
+      goal: business.goal,
+      budget: business.budget,
+      notes: business.notes,
+      facts: business.facts.filter((f) => f.status !== 'unreviewed'),
+      diagnosis,
+    }),
+    rationale: `${completed.length} prior completed tests considered. Pick one or two suggestions within ${business.budget}. Targets are test commitments, not forecasts.${business.mode === 'demo' ? ' Demo suggestions use a local template adapted to recorded results.' : ''}`,
+  };
+  business.rounds.push(round);
+  addLog(
+    business,
+    `${round.name} created with ${round.experiments.length} suggestions and a saved business brief.`,
+  );
+  return round;
+}
+
+export function weeklyReview(business: BusinessDocument): Review {
+  const end = new Date();
+  const start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const all = business.rounds.flatMap((r) => r.experiments);
+  const completed = all.filter(
+    (e) =>
+      e.status === 'complete' &&
+      e.endedAt &&
+      new Date(e.endedAt) >= start &&
+      new Date(e.endedAt) <= end,
+  );
+  const measured = completed.filter((e) => Number.isFinite(e.result));
+  const describe = (e: Experiment) =>
+    `${e.channel}: ${e.result}/${e.target} ${e.metric.toLowerCase()}${e.learning ? `. Learning: ${e.learning}` : ''}`;
+  const wins = measured.filter((e) => e.result! >= e.target).map(describe);
+  const misses = measured.filter((e) => e.result! < e.target).map(describe);
+  const running = all.filter((e) => e.status === 'running');
+  const pending = business.outreach.prospects.filter((p) =>
+    ['drafted', 'approved', 'sending', 'uncertain'].includes(p.status),
+  );
+  const decisions: string[] = [];
+  if (wins.length)
+    decisions.push(
+      'Repeat one test that met its target, retaining its evidence and changing only one variable. A single result is not proof of causality.',
+    );
+  if (misses.length)
+    decisions.push(
+      'Review the missed tests with the owner. Change the audience, message, or offer before retrying; do not assume the cause from totals.',
+    );
+  if (running.length)
+    decisions.push(
+      `Record outcomes for ${running.length} running test${running.length === 1 ? '' : 's'} before opening more work.`,
+    );
+  if (pending.length)
+    decisions.push(
+      `Resolve ${pending.length} outreach item${pending.length === 1 ? '' : 's'} awaiting review, sending, or delivery reconciliation.`,
+    );
+  if (completed.length !== measured.length)
+    decisions.push(
+      'Some completed tests lack numeric results; keep their outcomes unknown until measured.',
+    );
+  if (!decisions.length)
+    decisions.push(
+      business.diagnosis?.recommendation ||
+        'Confirm the business brief, gather demand and outcome signals, then start one measurable test.',
+    );
+  const review: Review = {
+    id: uid('review'),
+    periodStart: start.toISOString(),
+    periodEnd: end.toISOString(),
+    createdAt: end.toISOString(),
+    summary: completed.length
+      ? `${completed.length} experiment${completed.length === 1 ? '' : 's'} completed in the last seven days; ${wins.length} met target. ${running.length} still running.`
+      : `No experiments completed in the last seven days. ${running.length} currently running.`,
+    wins,
+    misses,
+    decisions,
+    nextReviewDue: new Date(
+      end.getTime() + 7 * 24 * 60 * 60 * 1000,
+    ).toISOString(),
+  };
+  business.reviews.unshift(review);
+  addLog(business, 'Weekly review generated on demand.');
+  return review;
 }
