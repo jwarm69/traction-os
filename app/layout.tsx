@@ -13,7 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Traction | GTM workspace', description: 'Research a business, calibrate with its owner, and run measurable growth experiments.',
+  title: 'Traction | GTM workspace',
+  description:
+    'Research a business, calibrate with its owner, and run measurable growth experiments.',
 };
 
 export default function RootLayout({

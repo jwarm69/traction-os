@@ -39,3 +39,5 @@ Live provider calls require a user-supplied API key and have not been exercised 
 - Research statements are model-generated and require owner review, including checking source links. Channel targets are hypotheses, never predicted outcomes.
 - The owner action unlocks measurement. Outcome readouts use a transparent target comparison, not causal attribution.
 - Keep the site private. Shared access would need account-based ownership, abuse controls and a separate credential strategy.
+
+The bundled component catalog has existing lint diagnostics in unused primitives. Application-source lint is checked separately with `npx oxlint app lib db tests`.
