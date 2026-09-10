@@ -7,11 +7,21 @@ import {
 } from '@/lib/turso';
 import {
   addLog,
+  acceptGuidedProposal,
+  agreeGuidedDiagnosis,
+  confirmGuidedBrief,
   createRound,
   demoBusiness,
   diagnose,
+  ensureGuided,
+  guidedDraftMatchesActive,
+  invalidateGuidedBrief,
+  saveGuidedDraft,
+  saveGuidedDecisionDraft,
+  setGuidedProposal,
   uid,
   weeklyReview,
+  type BriefFieldKey,
   type BusinessDocument,
   type Fact,
 } from '@/lib/engine';
@@ -303,12 +313,161 @@ export async function POST(req: Request) {
         409,
       );
     const b = JSON.parse(row.data) as BusinessDocument;
-    if (op === 'save_context') {
+    if (op === 'save_guided_draft') {
+      const fields = object(x.fields);
+      const confirmations = object(x.confirmations || {});
+      const keys: BriefFieldKey[] = [
+        'offer',
+        'audience',
+        'readiness',
+        'objective',
+        'resources',
+      ];
+      saveGuidedDraft(
+        b,
+        Object.fromEntries(
+          keys.map((key) => [key, txt(fields[key] || '', 3000)]),
+        ) as Record<BriefFieldKey, string>,
+        Object.fromEntries(
+          keys.map((key) => [key, confirmations[key] === true]),
+        ),
+        txt(x.ownerNotes || '', 8000),
+      );
+    } else if (op === 'save_guided_decision_draft') {
+      saveGuidedDecisionDraft(
+        b,
+        txt(x.hypothesis || '', 2000),
+        txt(x.nextObservation || '', 1200),
+      );
+    } else if (op === 'confirm_guided_brief') {
+      if (x.fields) {
+        const fields = object(x.fields);
+        const confirmations = object(x.confirmations || {});
+        const keys: BriefFieldKey[] = ['offer', 'audience', 'readiness', 'objective', 'resources'];
+        saveGuidedDraft(
+          b,
+          Object.fromEntries(keys.map((key) => [key, txt(fields[key] || '', 3000)])) as Record<BriefFieldKey, string>,
+          Object.fromEntries(keys.map((key) => [key, confirmations[key] === true])),
+          txt(x.ownerNotes || '', 8000),
+        );
+      }
+      confirmGuidedBrief(b);
+    } else if (op === 'agree_guided_decision') {
+      const flow = ensureGuided(b);
+      if (!flow.activeBriefVersionId)
+        throw Error('Confirm the business brief first.');
+      const signals = b.signals.slice(-8);
+      const hasBaseline = signals.length > 0;
+      agreeGuidedDiagnosis(b, {
+        hypothesis: required(x.hypothesis, 2000),
+        evidence: hasBaseline
+          ? signals.map(
+              (signal) =>
+                `${signal.metric}: ${signal.value} (${signal.period}; ${signal.source})`,
+            )
+          : ['No comparable measured baseline is recorded.'],
+        alternatives: Array.isArray(x.alternatives)
+          ? x.alternatives.slice(0, 4).map((v) => required(v, 800))
+          : ['The constraint may be acquisition, activation, or offer clarity.'],
+        nextObservation: required(x.nextObservation, 1200),
+        confidence: hasBaseline ? 'medium' : 'low',
+        agreedAt: new Date().toISOString(),
+      });
+    } else if (op === 'propose_guided_experiment') {
+      const flow = ensureGuided(b);
+      const brief = flow.briefVersions.find(
+        (version) => version.id === flow.activeBriefVersionId,
+      );
+      if (!brief || !flow.diagnosis)
+        throw Error('Agree on the brief and uncertainty before planning.');
+      if (!guidedDraftMatchesActive(flow))
+        throw Error('The business draft changed. Confirm a new brief before using AI to plan.');
+      const beforeRevision = row.revision;
+      const shape = (a: Record<string, unknown>) => ({
+        title: required(a.title, 200),
+        uncertainty: required(a.uncertainty, 1000),
+        rationale: required(a.rationale, 2000),
+        audience: required(a.audience, 1000),
+        action: required(a.action, 3000),
+        ownerContribution: required(a.ownerContribution, 1200),
+        timeWindow: required(a.timeWindow, 300),
+        cost: required(a.cost, 300),
+        metric: required(a.metric, 500),
+        successRule: required(a.successRule, 800),
+        stoppingRule: required(a.stoppingRule, 800),
+        measurementPlan: required(a.measurementPlan, 1200),
+        alternatives: Array.isArray(a.alternatives)
+          ? a.alternatives.slice(0, 3).map((v) => required(v, 800))
+          : [],
+      });
+      let proposal;
+      if (b.mode === 'demo') {
+        proposal = shape({
+          title: 'Guided first-value pilot',
+          uncertainty: flow.diagnosis.hypothesis,
+          rationale:
+            'A small guided pilot creates a direct observation before spending on a wider acquisition effort.',
+          audience: brief.fields.audience.value,
+          action:
+            'Invite five eligible people through an owner-controlled channel and guide them through the currently ready workflow.',
+          ownerContribution:
+            'Confirm the promise, choose the eligible participants, and record completion.',
+          timeWindow: '14 days',
+          cost: '$0 external spend; within the confirmed owner time',
+          metric: 'Eligible participants who reach the confirmed first useful outcome',
+          successRule: 'At least 3 of 5 invited participants reach the first useful outcome.',
+          stoppingRule:
+            'Stop at 14 days, after five completed attempts, or immediately if the promised workflow is unavailable.',
+          measurementPlan:
+            'Record invited, started, and first-value completed for the same named cohort; missing observations remain unknown.',
+          alternatives: [
+            'Broad acquisition is deferred until the first-value path is observed.',
+          ],
+        });
+      } else {
+        const boundedContext = {
+          brief,
+          diagnosis: flow.diagnosis,
+          signals: b.signals.slice(-8),
+          completedExperiments: b.rounds
+            .flatMap((round) => round.experiments)
+            .filter((experiment) => experiment.status === 'complete')
+            .slice(-5)
+            .map(({ channel, metric, target, result, learning }) => ({
+              channel,
+              metric,
+              target,
+              result,
+              learning,
+            })),
+        };
+        const a = await runAI(
+          runtime(),
+          u.id,
+          txt(x.key || '', 500),
+          `Propose exactly one smallest useful experiment grounded only in this confirmed brief. Return {title,uncertainty,rationale,audience,action,ownerContribution,timeWindow,cost,metric,successRule,stoppingRule,measurementPlan,alternatives:[string]}. Include denominators and a finite stopping rule. Missing baseline stays unknown. Do not authorize outreach, spending, or external action. Context: ${JSON.stringify(boundedContext)}`,
+        );
+        const latest = await loadBusiness(runtime(), u.id, id);
+        if (!latest || latest.revision !== beforeRevision)
+          return out(
+            {
+              error:
+                'The brief changed while the proposal was being prepared. Review it and generate a fresh proposal.',
+            },
+            409,
+          );
+        proposal = shape(a);
+      }
+      setGuidedProposal(b, proposal);
+    } else if (op === 'accept_guided_experiment') {
+      acceptGuidedProposal(b);
+    } else if (op === 'save_context') {
       const update = required(x.update, 4000);
       const notes = [b.notes, update].filter(Boolean).join('\n\n');
       if (notes.length > 16000) throw Error('Your notes are full. Edit your business context to make room before adding more.');
       b.notes = notes;
       delete b.contextDraft;
+      invalidateGuidedBrief(b);
       addLog(b, 'Owner update saved to business context.');
     } else if (op === 'organize_context') {
       const a = await runAI(runtime(), u.id, txt(x.key || '', 500),
@@ -321,6 +480,7 @@ export async function POST(req: Request) {
       b.goal = txt(x.goal, 2000);
       b.budget = txt(x.budget, 1000);
       b.notes = txt(x.notes || '', 16000);
+      invalidateGuidedBrief(b);
       addLog(b, 'Business direction updated. Existing rounds kept unchanged.');
     } else if (op === 'add_fact') {
       b.facts.push({
@@ -332,6 +492,7 @@ export async function POST(req: Request) {
         confidence: confidence(x.confidence || 'medium'),
         status: 'confirmed',
       });
+      invalidateGuidedBrief(b);
       addLog(b, `Owner fact added: ${txt(x.label, 100)}.`);
     } else if (op === 'update_fact') {
       const f = b.facts.find((f) => f.id === x.factId);
@@ -343,6 +504,7 @@ export async function POST(req: Request) {
       f.confidence = confidence(x.confidence);
       f.status = x.status;
       f.observedAt = new Date().toISOString();
+      invalidateGuidedBrief(b);
       addLog(b, `${f.label} reviewed.`);
     } else if (op === 'add_signal') {
       const v = numeric(x.value);

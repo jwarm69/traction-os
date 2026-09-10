@@ -103,6 +103,67 @@ export type OutreachDraft = {
   createdAt: string;
   reviewedAt?: string;
 };
+export type BriefFieldKey =
+  | 'offer'
+  | 'audience'
+  | 'readiness'
+  | 'objective'
+  | 'resources';
+export type BriefField = {
+  value: string;
+  source: 'owner' | 'research' | 'legacy_proposal' | 'unknown';
+  confirmed: boolean;
+};
+export type BusinessBriefVersion = {
+  id: string;
+  number: number;
+  createdAt: string;
+  ownerNotes: string;
+  fields: Record<BriefFieldKey, BriefField>;
+};
+export type GuidedExperiment = {
+  id: string;
+  briefVersionId: string;
+  title: string;
+  uncertainty: string;
+  rationale: string;
+  audience: string;
+  action: string;
+  ownerContribution: string;
+  timeWindow: string;
+  cost: string;
+  metric: string;
+  successRule: string;
+  stoppingRule: string;
+  measurementPlan: string;
+  alternatives: string[];
+  status: 'proposed' | 'accepted';
+  createdAt: string;
+  acceptedAt?: string;
+};
+export type GuidedFlow = {
+  step: 'understanding' | 'outcome' | 'decision' | 'proposal' | 'complete';
+  draft: {
+    fields: Record<BriefFieldKey, BriefField>;
+    ownerNotes: string;
+    savedAt: string;
+    decisionDraft?: { hypothesis: string; nextObservation: string };
+  };
+  briefVersions: BusinessBriefVersion[];
+  activeBriefVersionId?: string;
+  diagnosis?: {
+    hypothesis: string;
+    evidence: string[];
+    alternatives: string[];
+    nextObservation: string;
+    confidence: 'low' | 'medium' | 'high';
+    agreedAt: string;
+  };
+  proposal?: GuidedExperiment;
+  proposalHistory?: GuidedExperiment[];
+  contextChangeNotice?: string;
+  updatedAt: string;
+};
 export type BusinessDocument = {
   version: 2;
   id: string;
@@ -115,6 +176,7 @@ export type BusinessDocument = {
   budget: string;
   notes: string;
   contextDraft?: { summary: string; questions: string[]; generatedAt: string };
+  guided?: GuidedFlow;
   facts: Fact[];
   signals: Signal[];
   diagnosis?: Diagnosis;
@@ -130,6 +192,226 @@ export function addLog(business: BusinessDocument, text: string) {
   const at = iso();
   business.log.unshift({ text, at });
   business.updatedAt = at;
+}
+
+const briefKeys: BriefFieldKey[] = [
+  'offer',
+  'audience',
+  'readiness',
+  'objective',
+  'resources',
+];
+const blankField = (): BriefField => ({
+  value: '',
+  source: 'unknown',
+  confirmed: false,
+});
+export function ensureGuided(business: BusinessDocument): GuidedFlow {
+  if (business.guided) return business.guided;
+  const find = (pattern: RegExp) =>
+    business.facts.find((fact) => pattern.test(fact.label));
+  const fromFact = (fact?: Fact): BriefField =>
+    fact
+      ? {
+          value: fact.value,
+          source: fact.source === 'Owner input' ? 'owner' : 'research',
+          confirmed: fact.status !== 'unreviewed',
+        }
+      : blankField();
+  const now = iso();
+  business.guided = {
+    step: 'understanding',
+    draft: {
+      fields: {
+        offer: fromFact(find(/offer|product|service/i)),
+        audience: fromFact(find(/audience|customer|buyer|user/i)),
+        readiness: fromFact(find(/readiness|available|workflow|capabilit/i)),
+        objective: business.goal
+          ? { value: business.goal, source: 'legacy_proposal', confirmed: false }
+          : blankField(),
+        resources: business.budget
+          ? { value: business.budget, source: 'legacy_proposal', confirmed: false }
+          : blankField(),
+      },
+      ownerNotes: business.notes,
+      savedAt: now,
+    },
+    briefVersions: [],
+    updatedAt: now,
+  };
+  return business.guided;
+}
+
+export function saveGuidedDraft(
+  business: BusinessDocument,
+  values: Record<BriefFieldKey, string>,
+  confirmations: Partial<Record<BriefFieldKey, boolean>>,
+  ownerNotes: string,
+) {
+  const flow = ensureGuided(business);
+  for (const key of briefKeys) {
+    const value = values[key]?.trim() || '';
+    const prior = flow.draft.fields[key];
+    const changed = value !== prior.value;
+    flow.draft.fields[key] = {
+      value,
+      source: changed ? (value ? 'owner' : 'unknown') : prior.source,
+      confirmed: value ? Boolean(confirmations[key]) : false,
+    };
+  }
+  flow.draft.ownerNotes = ownerNotes.trim();
+  flow.draft.savedAt = iso();
+  flow.updatedAt = flow.draft.savedAt;
+  addLog(business, 'Guided business draft saved.');
+  return flow;
+}
+
+export function confirmGuidedBrief(business: BusinessDocument) {
+  const flow = ensureGuided(business);
+  for (const key of briefKeys) {
+    const field = flow.draft.fields[key];
+    if (!field.value || !field.confirmed)
+      throw Error(`Confirm ${key} before continuing.`);
+  }
+  const now = iso();
+  const version: BusinessBriefVersion = {
+    id: uid('brief'),
+    number: (flow.briefVersions.at(-1)?.number || 0) + 1,
+    createdAt: now,
+    ownerNotes: flow.draft.ownerNotes,
+    fields: structuredClone(flow.draft.fields),
+  };
+  flow.briefVersions.push(version);
+  flow.activeBriefVersionId = version.id;
+  flow.step = 'decision';
+  if (
+    flow.proposal &&
+    !(flow.proposalHistory || []).some((item) => item.id === flow.proposal?.id)
+  )
+    (flow.proposalHistory ||= []).push(structuredClone(flow.proposal));
+  flow.proposal = undefined;
+  flow.diagnosis = undefined;
+  flow.updatedAt = now;
+  flow.contextChangeNotice = undefined;
+  addLog(business, `Business brief version ${version.number} confirmed by owner.`);
+  return version;
+}
+
+export function agreeGuidedDiagnosis(
+  business: BusinessDocument,
+  diagnosis: NonNullable<GuidedFlow['diagnosis']>,
+) {
+  const flow = ensureGuided(business);
+  if (!flow.activeBriefVersionId) throw Error('Confirm the business brief first.');
+  if (
+    flow.proposal &&
+    !(flow.proposalHistory || []).some((item) => item.id === flow.proposal?.id)
+  )
+    (flow.proposalHistory ||= []).push(structuredClone(flow.proposal));
+  flow.diagnosis = diagnosis;
+  flow.proposal = undefined;
+  flow.step = 'proposal';
+  flow.updatedAt = iso();
+  addLog(business, 'Owner agreed on the uncertainty to test.');
+}
+
+export function saveGuidedDecisionDraft(
+  business: BusinessDocument,
+  hypothesis: string,
+  nextObservation: string,
+) {
+  const flow = ensureGuided(business);
+  flow.draft.decisionDraft = {
+    hypothesis: hypothesis.trim(),
+    nextObservation: nextObservation.trim(),
+  };
+  flow.draft.savedAt = iso();
+  flow.updatedAt = flow.draft.savedAt;
+  addLog(business, 'Decision draft saved.');
+}
+
+export function guidedDraftMatchesActive(flow: GuidedFlow) {
+  const active = flow.briefVersions.find(
+    (version) => version.id === flow.activeBriefVersionId,
+  );
+  return Boolean(
+    active &&
+      !briefKeys.some(
+        (key) =>
+          active.fields[key].value !== flow.draft.fields[key].value ||
+          active.fields[key].confirmed !== flow.draft.fields[key].confirmed,
+      ) &&
+      active.ownerNotes === flow.draft.ownerNotes,
+  );
+}
+
+export function invalidateGuidedBrief(business: BusinessDocument) {
+  const flow = business.guided;
+  if (!flow?.activeBriefVersionId) return;
+  if (
+    flow.proposal &&
+    !(flow.proposalHistory || []).some((item) => item.id === flow.proposal?.id)
+  )
+    (flow.proposalHistory ||= []).push(structuredClone(flow.proposal));
+  flow.proposal = undefined;
+  flow.diagnosis = undefined;
+  flow.activeBriefVersionId = undefined;
+  flow.step = 'understanding';
+  for (const key of briefKeys) flow.draft.fields[key].confirmed = false;
+  if (business.notes && !flow.draft.ownerNotes.includes(business.notes))
+    flow.draft.ownerNotes = [flow.draft.ownerNotes, business.notes]
+      .filter(Boolean)
+      .join('\n\n');
+  flow.draft.savedAt = iso();
+  flow.contextChangeNotice =
+    'Business context changed outside this guide. Review and reconfirm these answers before planning.';
+  flow.updatedAt = iso();
+}
+
+export function setGuidedProposal(
+  business: BusinessDocument,
+  proposal: Omit<GuidedExperiment, 'id' | 'briefVersionId' | 'status' | 'createdAt'>,
+) {
+  const flow = ensureGuided(business);
+  if (!flow.activeBriefVersionId || !flow.diagnosis)
+    throw Error('Agree on the business brief and decision first.');
+  if (!guidedDraftMatchesActive(flow))
+    throw Error('The draft changed after this brief. Confirm a new version before proposing an experiment.');
+  for (const value of Object.values(proposal)) {
+    if (typeof value === 'string' && !value.trim())
+      throw Error('The experiment proposal is incomplete.');
+  }
+  if (!proposal.alternatives.length)
+    throw Error('Explain at least one alternative before proposing the experiment.');
+  if (
+    flow.proposal &&
+    !(flow.proposalHistory || []).some((item) => item.id === flow.proposal?.id)
+  )
+    (flow.proposalHistory ||= []).push(structuredClone(flow.proposal));
+  flow.proposal = {
+    ...proposal,
+    id: uid('guided_exp'),
+    briefVersionId: flow.activeBriefVersionId,
+    status: 'proposed',
+    createdAt: iso(),
+  };
+  flow.updatedAt = iso();
+  addLog(business, 'One bounded experiment proposed for owner review.');
+  return flow.proposal;
+}
+
+export function acceptGuidedProposal(business: BusinessDocument) {
+  const flow = ensureGuided(business);
+  if (!flow.proposal) throw Error('Create an experiment proposal first.');
+  if (flow.proposal.briefVersionId !== flow.activeBriefVersionId)
+    throw Error('The proposal uses an older brief. Regenerate it before accepting.');
+  if (!guidedDraftMatchesActive(flow))
+    throw Error('The draft changed after this proposal. Confirm a new brief before accepting it.');
+  flow.proposal.status = 'accepted';
+  flow.proposal.acceptedAt = iso();
+  flow.step = 'complete';
+  flow.updatedAt = iso();
+  addLog(business, 'Guided experiment accepted. Preparation remains pending.');
 }
 
 export function demoBusiness(): BusinessDocument {

@@ -22,7 +22,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { BusinessDocument, Fact } from '@/lib/engine';
 import { ownerQueue } from '@/lib/owner-queue';
-import ContextGuide from './context-guide';
+import GuidedWorkspace from './guided-workspace';
 type Summary = {
   id: string;
   name: string;
@@ -275,7 +275,7 @@ export default function Workspace({ username }: { username: string }) {
             />
           ) : (
             <>
-              <div className="workspace-heading">
+              <div className={`workspace-heading ${tab === 'today' ? 'compact-heading' : ''}`}>
                 <div>
                   <p className="eyebrow">
                     OWNER WORKSPACE /{' '}
@@ -299,9 +299,9 @@ export default function Workspace({ username }: { username: string }) {
                 </div>
               )}
               <Tabs value={tab} onValueChange={(v) => setTab(String(v))}>
-                <TabsList className="owner-tabs" variant="line">
+                <TabsList className={`owner-tabs ${tab === 'today' ? 'compact-tabs' : ''}`} variant="line">
                   {[
-                    ['today', 'Start here'],
+                    ['today', 'Next move'],
                     ['memory', 'Business context'],
                     ['rounds', 'Growth plan'],
                     ['signals', 'Results'],
@@ -311,11 +311,10 @@ export default function Workspace({ username }: { username: string }) {
                     </TabsTrigger>
                   ))}
                 </TabsList>
-                <div className="secondary-tools"><Button variant="ghost" size="sm" onClick={() => setTab('outreach')}>Prospects & messages</Button><Button variant="ghost" size="sm" onClick={() => setTab('reviews')}>Weekly review</Button></div>
+                {tab !== 'today' && <div className="secondary-tools"><Button variant="ghost" size="sm" onClick={() => setTab('outreach')}>Prospects & messages</Button><Button variant="ghost" size="sm" onClick={() => setTab('reviews')}>Weekly review</Button></div>}
                 <TabsContent value="today">
-                  <section className="next-step"><p className="eyebrow">YOUR NEXT STEP</p><h2>{queue[0]?.title || 'Keep your business context up to date'}</h2><p>{queue[0]?.detail || 'Tell us what changed, then plan your next small test.'}</p><Button onClick={() => setTab(queue[0]?.tab || 'memory')}>Continue <ChevronRight size={16}/></Button></section>
-                  <ContextGuide key={b.id} b={b} act={act} busy={!!busy} openMemory={() => setTab('memory')}/>
-                  <details className="more-progress"><summary>More actions and business diagnosis</summary><Today b={b} act={act} setTab={setTab} queue={queue}/></details>
+                  <GuidedWorkspace key={`${b.id}:${revision}`} b={b} act={act} busy={!!busy} username={username} revision={revision} />
+                  <details className="more-progress"><summary>Existing tools and plan history</summary><p className="small muted">Older goals and growth rounds remain preserved as historical proposals. They are not approved by this guided flow.</p><Today b={b} act={act} setTab={setTab} queue={queue}/></details>
                 </TabsContent>
                 <TabsContent value="memory">
                   <Memory key={`${b.id}:${revision}`} b={b} act={act} />
