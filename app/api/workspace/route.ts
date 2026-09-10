@@ -445,7 +445,7 @@ export async function POST(req: Request) {
           runtime(),
           u.id,
           txt(x.key || '', 500),
-          `Propose exactly one smallest useful experiment grounded only in this confirmed brief. Return {title,uncertainty,rationale,audience,action,ownerContribution,timeWindow,cost,metric,successRule,stoppingRule,measurementPlan,alternatives:[string]}. Include denominators and a finite stopping rule. Missing baseline stays unknown. Do not authorize outreach, spending, or external action. Context: ${JSON.stringify(boundedContext)}`,
+          `Propose exactly one smallest useful experiment grounded only in this confirmed brief. Return {title,uncertainty,rationale,audience,action,ownerContribution,timeWindow,cost,metric,successRule,stoppingRule,measurementPlan,alternatives:[string]}. Include denominators and a finite stopping rule. The experiment must directly test the agreed uncertainty and next observation. Internal reviews or self-scoring cannot establish customer usefulness, demand, or willingness to pay. If real customer observation is needed, propose it explicitly as a future owner-approved step, with recruitment and access dependencies; do not substitute an internal checklist. Alternatives must explain why other experiment directions are deferred, not list minor variations of the same action. Missing baseline stays unknown. This is a proposal only: you may describe future outreach or owner actions, but must not claim they are authorized, started, or completed. Respect confirmed time, budget, and readiness. Context: ${JSON.stringify(boundedContext)}`,
         );
         const latest = await loadBusiness(runtime(), u.id, id);
         if (!latest || latest.revision !== beforeRevision)
