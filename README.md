@@ -1,5 +1,13 @@
 # Traction OS
 
+## Product roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the short- and long-term product milestones, release gates, and operating assumptions. [Initial slices for Sol](docs/INITIAL-SLICES.md) records the implemented S1–S6 foundation and its acceptance evidence. [Sprint 01](docs/SPRINT-01.md) supplies supporting lifecycle requirements. Later roadmap items remain planned work.
+
+The current product has three owner modes. Explore keeps ideas and durable human/AI discussion. Do freezes a selected direction, produces versioned artifacts, keeps sourced research inspectable, and records external observations without confusing drafts with outcomes. Portfolio shows priority, owner-time commitment, active/blocked work, and latest learning across businesses.
+
+The first [four-business ideation pass](docs/FOUR-BUSINESS-IDEATION.md) is ready for AlignIQ Golf, Astro-Log, Tonight, and Traction OS.
+
 ## Public beta and shared AI
 
 Anyone can visit the public URL. People register a unique username with a 4–6 digit PIN to use private, per-account business records. PINs are PBKDF2 hashed with a random per-account salt. Login sessions use hashed opaque tokens in secure HTTP-only cookies, and failed login attempts are throttled per username. The server-held `OPENAI_API_KEY` funds shared AI; it is never returned to the browser. Existing personal Google connections remain session-only.
@@ -33,7 +41,7 @@ Live research and tailored experiment rounds use the Responses API and `gpt-5.4-
 npx tsc --noEmit
 npx oxlint app lib db tests scripts
 node --test tests/*.test.mjs
-node tests/business-api.mjs
+TEST_BASE_URL=http://localhost:3000 node tests/business-api.mjs
 node tests/turso-integration.mjs
 npm run build
 ```

@@ -24,7 +24,35 @@ import {
   type BriefFieldKey,
   type BusinessDocument,
   type Fact,
+  type ExploreSuggestion,
+  type ArtifactKind,
+  type EndeavorStatus,
+  type IdeaKind,
 } from '@/lib/engine';
+import {
+  addExploreMessage,
+  createIdea,
+  ideaKinds,
+  parkIdea,
+  restoreIdea,
+  updateIdea,
+  type IdeaInput,
+} from '@/lib/explore';
+import {
+  addChecklistItem,
+  addObservation,
+  addResearchCandidates,
+  endeavorFor,
+  prepareGuidedProposal,
+  reviewArtifact,
+  reviewResearchCandidate,
+  saveArtifact,
+  selectIdea,
+  setChecklistItem,
+  setPortfolio,
+  transitionEndeavor,
+  updateEndeavor,
+} from '@/lib/work';
 import {
   emailAddress,
   encodeMail,
@@ -77,6 +105,71 @@ const sourceUrl = (value: unknown) => {
   if (url.protocol !== 'https:' || url.username || url.password)
     throw Error('Research must include a supporting HTTPS source.');
   return url.href;
+};
+const canonicalSource = (value: string) => {
+  const url = new URL(value);
+  url.hash = '';
+  url.search = '';
+  return `${url.origin}${url.pathname.replace(/\/$/, '') || '/'}`;
+};
+const ideaKind = (value: unknown): IdeaKind => {
+  if (typeof value === 'string' && ideaKinds.includes(value as IdeaKind))
+    return value as IdeaKind;
+  throw Error('Choose a valid idea type.');
+};
+const optionalSourceUrls = (value: unknown) => {
+  if (!Array.isArray(value) || value.length > 12)
+    throw Error('Use at most 12 source links.');
+  return [...new Set(value.map((item) => sourceUrl(item)))];
+};
+const ideaInput = (value: Record<string, unknown>): IdeaInput => ({
+  title: required(value.title, 160),
+  kind: ideaKind(value.kind),
+  description: required(value.description, 4000),
+  audience: txt(value.audience || '', 1200),
+  outcome: txt(value.outcome || '', 1200),
+  ownerNotes: txt(value.ownerNotes || '', 3000),
+  sources: optionalSourceUrls(value.sources || []),
+});
+const stringList = (value: unknown, count = 12, length = 1200) => {
+  if (!Array.isArray(value) || value.length > count)
+    throw Error(`Use at most ${count} items.`);
+  return value.map((item) => required(item, length));
+};
+const nonEmptyStringList = (value: unknown, count = 12, length = 1200) => {
+  const values = stringList(value, count, length);
+  if (!values.length) throw Error('Add at least one item.');
+  return values;
+};
+const endeavorStatus = (value: unknown): EndeavorStatus => {
+  const statuses: EndeavorStatus[] = [
+    'preparing',
+    'ready',
+    'in_progress',
+    'blocked',
+    'completed',
+    'stopped',
+  ];
+  if (typeof value === 'string' && statuses.includes(value as EndeavorStatus))
+    return value as EndeavorStatus;
+  throw Error('Choose a valid work status.');
+};
+const artifactKind = (value: unknown): ArtifactKind => {
+  const kinds: ArtifactKind[] = [
+    'content',
+    'outreach',
+    'research_notes',
+    'product_brief',
+  ];
+  if (typeof value === 'string' && kinds.includes(value as ArtifactKind))
+    return value as ArtifactKind;
+  throw Error('Choose a valid artifact type.');
+};
+const observedDate = (value: unknown) => {
+  const date = new Date(required(value, 40));
+  if (!Number.isFinite(date.getTime()) || date.getTime() > Date.now() + 60000)
+    throw Error('Choose a valid observation date that is not in the future.');
+  return date.toISOString();
 };
 function legacy(
   raw: string,
@@ -313,7 +406,366 @@ export async function POST(req: Request) {
         409,
       );
     const b = JSON.parse(row.data) as BusinessDocument;
-    if (op === 'save_guided_draft') {
+    if (op === 'create_idea') {
+      createIdea(b, ideaInput(x));
+    } else if (op === 'update_idea') {
+      updateIdea(b, required(x.ideaId, 100), ideaInput(x));
+    } else if (op === 'park_idea') {
+      parkIdea(
+        b,
+        required(x.ideaId, 100),
+        required(x.reason, 1200),
+      );
+    } else if (op === 'restore_idea') {
+      restoreIdea(b, required(x.ideaId, 100));
+    } else if (op === 'explore_chat') {
+      const message = required(x.message, 5000);
+      const ideaId = txt(x.ideaId || '', 100) || undefined;
+      if (
+        ideaId &&
+        !b.explore?.ideas.some((idea) => idea.id === ideaId)
+      )
+        throw Error('Explore idea not found.');
+      addExploreMessage(b, { role: 'owner', content: message, ideaId });
+      const firstData = JSON.stringify(b);
+      if (firstData.length > 500000)
+        throw Error('This business record is full. Shorten older discussions before continuing.');
+      const firstRevision = await saveBusiness(
+        runtime(),
+        u,
+        id,
+        firstData,
+        row.revision,
+      );
+      if (firstRevision === null)
+        return out({ error: 'This business changed in another tab. Reload to see it.' }, 409);
+      let answer: Record<string, unknown>;
+      try {
+        const context = {
+          business: {
+            name: b.name,
+            goal: b.goal,
+            budget: b.budget,
+            notes: b.notes,
+          },
+          facts: b.facts.slice(-12).map((fact) => ({
+            label: fact.label,
+            value: fact.value,
+            source: fact.source,
+            status: fact.status,
+          })),
+          ideas: (b.explore?.ideas || []).slice(0, 12).map((idea) => ({
+            id: idea.id,
+            title: idea.title,
+            kind: idea.kind,
+            description: idea.description,
+            audience: idea.audience,
+            outcome: idea.outcome,
+            status: idea.status,
+            parkedReason: idea.parkedReason,
+          })),
+          focusedIdea: ideaId || null,
+          discussion: (b.explore?.messages || []).slice(-12).map((item) => ({
+            role: item.role,
+            content: item.content,
+            ideaId: item.ideaId,
+          })),
+        };
+        answer =
+          b.mode === 'demo'
+            ? {
+                reply:
+                  'A creator collaboration could borrow trusted distribution, while a recurring content series gives the business more control and creates reusable material. Compare them first on audience fit, owner production time, and whether a suitable creator relationship actually exists. The creator path depends on access and agreement; the content path depends on a repeatable format. Which constraint is easier to test with the time already confirmed?',
+                suggestions: [
+                  {
+                    title: 'Recurring educational content series',
+                    kind: 'content',
+                    description:
+                      'Develop a repeatable short format around one audience problem, then review whether producing and distributing it is feasible.',
+                    audience:
+                      'The audience confirmed in the fictional business brief',
+                    outcome:
+                      'A reviewed content format ready for a small owner-controlled test',
+                  },
+                ],
+              }
+            : await runAI(
+                runtime(),
+                u.id,
+                txt(x.key || '', 500),
+                `Help the owner explore marketing and product-growth possibilities. Return {reply,suggestions:[{title,kind,description,audience,outcome}]}. Reply in at most 500 words with concrete reasoning, alternatives, important unknowns, and at most three focused questions when useful. Provide 0-3 suggestions only when they are worth saving. kind must be research, content, outreach, campaign, experiment, or product_improvement. Suggestions are proposals, not researched evidence. Do not invent sources, contacts, audience sizes, prices, partnerships, results, or completed work. Owner statements and confirmed facts may guide ideas; unreviewed facts remain provisional. Do not silently change business facts or existing ideas. Context: ${JSON.stringify(context)}`,
+              );
+      } catch (error) {
+        return out({
+          ...(await loadOrImport(u, id)),
+          warning:
+            error instanceof Error
+              ? `${error.message} Your message was saved.`
+              : 'The assistant could not respond. Your message was saved.',
+        });
+      }
+      let reply: string;
+      let suggestions: ExploreSuggestion[];
+      try {
+        reply = required(answer.reply, 5000);
+        suggestions = Array.isArray(answer.suggestions)
+          ? answer.suggestions.slice(0, 3).map((value) => {
+              const suggestion = object(value);
+              return {
+                title: required(suggestion.title, 160),
+                kind: ideaKind(suggestion.kind),
+                description: required(suggestion.description, 2500),
+                audience: txt(suggestion.audience || '', 1200),
+                outcome: txt(suggestion.outcome || '', 1200),
+              };
+            })
+          : [];
+      } catch {
+        return out({
+          ...(await loadOrImport(u, id)),
+          warning:
+            'The assistant returned an unreadable response. Your message was saved.',
+        });
+      }
+      const latest = await loadBusiness(runtime(), u.id, id);
+      if (!latest || latest.revision !== firstRevision)
+        return out({
+          ...(await loadOrImport(u, id)),
+          warning:
+            'The business changed while the assistant was responding. Your message is saved; send it again if you still want a response.',
+        });
+      addExploreMessage(b, {
+        role: 'assistant',
+        content: reply,
+        ideaId,
+        suggestions,
+      });
+      const finalRevision = await saveBusiness(
+        runtime(),
+        u,
+        id,
+        JSON.stringify(b),
+        firstRevision,
+      );
+      if (finalRevision === null)
+        return out({
+          ...(await loadOrImport(u, id)),
+          warning:
+            'The business changed before the response could be saved. Your message is preserved.',
+        });
+      return out({ ...(await loadOrImport(u, id)), revision: finalRevision });
+    } else if (op === 'run_ideation') {
+      const prompt = txt(x.prompt || '', 2000) ||
+        'Generate the strongest distinct marketing and product-growth possibilities for gaining useful traction now.';
+      const answer =
+        b.mode === 'demo'
+          ? {
+              reply: 'Here are three deliberately different directions to compare. They remain proposals until the owner saves one.',
+              suggestions: [
+                { title: 'Audience problem content series', kind: 'content', description: 'Create a repeatable educational format around one confirmed audience problem.', audience: 'The confirmed target audience', outcome: 'A reviewed repeatable content format' },
+                { title: 'Small creator-fit shortlist', kind: 'research', description: 'Research a small set of creators whose public work overlaps the audience problem.', audience: 'Potential creator audiences', outcome: 'A sourced, owner-reviewed shortlist' },
+                { title: 'First-value product walkthrough', kind: 'product_improvement', description: 'Review the path from arrival to first useful outcome and document the highest-friction step.', audience: 'New eligible users', outcome: 'One implementation-ready improvement brief' },
+              ],
+            }
+          : await runAI(
+              runtime(),
+              u.id,
+              txt(x.key || '', 500),
+              `Run a broad but practical ideation pass for this business. Return {reply,suggestions:[{title,kind,description,audience,outcome}]}, exactly 3 distinct possibilities spanning acquisition, content/creator distribution, or product improvement as appropriate. These are proposals, not evidence or authorized work. Do not invent sources, contacts, partnerships, current capabilities, metrics, prices, or results. Respect confirmed constraints, label unknowns, and favor directions the owner can validate cheaply. Owner emphasis: ${prompt}. Context: ${JSON.stringify({ name: b.name, url: b.url, goal: b.goal, budget: b.budget, notes: b.notes, facts: b.facts.filter((fact) => fact.status !== 'unreviewed').slice(0, 12), existingIdeas: b.explore?.ideas.slice(0, 12) || [] })}`,
+            );
+      const suggestions = Array.isArray(answer.suggestions)
+        ? answer.suggestions.slice(0, 3).map((value) => {
+            const suggestion = object(value);
+            return {
+              title: required(suggestion.title, 160),
+              kind: ideaKind(suggestion.kind),
+              description: required(suggestion.description, 2500),
+              audience: txt(suggestion.audience || '', 1200),
+              outcome: txt(suggestion.outcome || '', 1200),
+            };
+          })
+        : [];
+      if (suggestions.length !== 3)
+        throw Error('Ideation did not return three usable directions.');
+      addExploreMessage(b, {
+        role: 'assistant',
+        content: required(answer.reply, 5000),
+        suggestions,
+      });
+      addLog(b, 'Portfolio ideation pass completed; suggestions await owner selection.');
+    } else if (op === 'select_idea') {
+      selectIdea(b, required(x.ideaId, 100), {
+        intendedDeliverables: stringList(x.intendedDeliverables, 10, 1200),
+        effortBudget: required(x.effortBudget, 1200),
+        completionCriteria: required(x.completionCriteria, 2000),
+      });
+    } else if (op === 'prepare_guided_work') {
+      prepareGuidedProposal(b);
+    } else if (op === 'update_work') {
+      updateEndeavor(b, required(x.endeavorId, 100), {
+        title: required(x.title, 200),
+        description: required(x.description, 4000),
+        intendedDeliverables: stringList(x.intendedDeliverables, 10, 1200),
+        effortBudget: required(x.effortBudget, 1200),
+        completionCriteria: required(x.completionCriteria, 2000),
+      });
+    } else if (op === 'transition_work') {
+      transitionEndeavor(
+        b,
+        required(x.endeavorId, 100),
+        endeavorStatus(x.status),
+        txt(x.reason || '', 2000),
+      );
+    } else if (op === 'set_checklist_item') {
+      setChecklistItem(
+        b,
+        required(x.endeavorId, 100),
+        required(x.itemId, 100),
+        x.done === true,
+      );
+    } else if (op === 'add_checklist_item') {
+      addChecklistItem(
+        b,
+        required(x.endeavorId, 100),
+        required(x.text, 1200),
+      );
+    } else if (op === 'save_artifact') {
+      saveArtifact(b, required(x.endeavorId, 100), {
+        artifactId: txt(x.artifactId || '', 100) || undefined,
+        kind: artifactKind(x.kind),
+        title: required(x.title, 200),
+        content: required(x.content, 20000),
+        source: 'owner',
+      });
+    } else if (op === 'generate_artifact') {
+      const endeavor = endeavorFor(b, required(x.endeavorId, 100));
+      const kind = artifactKind(x.kind);
+      const title = required(x.title, 200);
+      const instruction = txt(x.instruction || '', 3000);
+      const confirmedFacts = b.facts
+        .filter((fact) => fact.status !== 'unreviewed')
+        .slice(0, 12);
+      const answer =
+        b.mode === 'demo'
+          ? {
+              content: `# ${title}\n\n## Purpose\n${endeavor.description}\n\n## Audience\n${endeavor.sourceIdeaSnapshot?.audience || 'Confirm the intended audience before use.'}\n\n## Draft\nThis is a fictional demo draft for review. Replace this section with the specific ${kind.replace('_', ' ')} material and verify every factual claim before external use.\n\n## Owner review\n- Confirm the promise and product availability.\n- Confirm names, links, and calls to action.\n- Approve any external delivery separately.`,
+            }
+          : await runAI(
+              runtime(),
+              u.id,
+              txt(x.key || '', 500),
+              `Create one editable ${kind} artifact. Return {content}. Do not claim it was sent, published, deployed, researched, or approved. Do not invent product capabilities, contacts, partnerships, performance, prices, or results. Mark unknowns for owner review. Use Markdown and make the deliverable immediately editable. Owner instruction: ${instruction || 'Prepare the smallest useful draft.'} Context: ${JSON.stringify({ business: { name: b.name, goal: b.goal, budget: b.budget, notes: b.notes }, confirmedFacts, endeavor })}`,
+            );
+      saveArtifact(b, endeavor.id, {
+        artifactId: txt(x.artifactId || '', 100) || undefined,
+        kind,
+        title,
+        content: required(answer.content, 20000),
+        source: 'assistant',
+      });
+    } else if (op === 'review_artifact') {
+      reviewArtifact(
+        b,
+        required(x.endeavorId, 100),
+        required(x.artifactId, 100),
+      );
+    } else if (op === 'add_research_candidate') {
+      addResearchCandidates(b, required(x.endeavorId, 100), [
+        {
+          name: required(x.name, 200),
+          url: sourceUrl(x.url),
+          retrievedAt: observedDate(x.retrievedAt || new Date().toISOString()),
+          observedFacts: nonEmptyStringList(x.observedFacts || [], 8, 1000),
+          fitRationale: required(x.fitRationale, 2000),
+          uncertainties: nonEmptyStringList(x.uncertainties || [], 8, 1000),
+        },
+      ]);
+    } else if (op === 'research_work') {
+      const endeavor = endeavorFor(b, required(x.endeavorId, 100));
+      const query = required(x.query, 1200);
+      const retrievedAt = new Date().toISOString();
+      const answer =
+        b.mode === 'demo'
+          ? {
+              candidates: [
+                {
+                  name: 'Fictional example candidate',
+                  url: 'https://example.com/',
+                  observedFacts: ['This is a demo-only placeholder, not a real researched fact.'],
+                  fitRationale: 'Use this card to practice reviewing a candidate.',
+                  uncertainties: ['Real audience fit, contact route, availability, and terms are unknown.'],
+                },
+              ],
+            }
+          : await runAI(
+              runtime(),
+              u.id,
+              txt(x.key || '', 500),
+              `Research a small set of channels, creators, partners, or examples for this work. Return {candidates:[{name,url,observedFacts:[string],fitRationale,uncertainties:[string]}]}; at most 5. Every observed fact must be directly supported by that candidate's HTTPS URL. Keep interpretation in fitRationale and missing information in uncertainties. Never invent contact details, follower counts, prices, availability, audience demographics, partnerships, or performance. Query: ${query}. Work context: ${JSON.stringify(endeavor)}`,
+              true,
+            );
+      if (!Array.isArray(answer.candidates) || !answer.candidates.length)
+        throw Error('Research did not return usable sourced candidates.');
+      const providerSources = new Set(
+        (Array.isArray(answer.__searchSources) ? answer.__searchSources : [])
+          .filter((value): value is string => typeof value === 'string')
+          .slice(0, 50)
+          .map((value) => canonicalSource(sourceUrl(value))),
+      );
+      if (b.mode !== 'demo' && !providerSources.size)
+        throw Error('Research returned no inspectable provider source evidence.');
+      addResearchCandidates(
+        b,
+        endeavor.id,
+        answer.candidates.slice(0, 5).map((value) => {
+          const candidate = object(value);
+          const url = sourceUrl(candidate.url);
+          if (b.mode !== 'demo' && !providerSources.has(canonicalSource(url)))
+            throw Error('A research candidate URL was not supported by provider source evidence.');
+          return {
+            name: required(candidate.name, 200),
+            url,
+            retrievedAt,
+            observedFacts: nonEmptyStringList(candidate.observedFacts, 8, 1000),
+            fitRationale: required(candidate.fitRationale, 2000),
+            uncertainties: nonEmptyStringList(candidate.uncertainties || [], 8, 1000),
+          };
+        }),
+      );
+    } else if (op === 'review_research_candidate') {
+      const status = x.status;
+      if (!['unreviewed', 'shortlisted', 'rejected'].includes(String(status)))
+        throw Error('Choose a valid research review state.');
+      reviewResearchCandidate(
+        b,
+        required(x.endeavorId, 100),
+        required(x.candidateId, 100),
+        status as 'unreviewed' | 'shortlisted' | 'rejected',
+        txt(x.reason || '', 1200),
+      );
+    } else if (op === 'add_observation') {
+      addObservation(b, required(x.endeavorId, 100), {
+        summary: required(x.summary, 3000),
+        evidenceUrls: optionalSourceUrls(x.evidenceUrls || []),
+        observedAt: observedDate(x.observedAt || new Date().toISOString()),
+        source: required(x.source, 1000),
+        actualEffort: txt(x.actualEffort || '', 1000),
+        nextDecision: required(x.nextDecision, 2000),
+      });
+    } else if (op === 'set_portfolio') {
+      const priority = String(x.priority);
+      if (!['now', 'next', 'maintain', 'paused'].includes(priority))
+        throw Error('Choose a valid portfolio priority.');
+      const ownerHours =
+        x.ownerHours === null || x.ownerHours === '' || x.ownerHours === undefined
+          ? null
+          : numeric(x.ownerHours);
+      setPortfolio(b, {
+        priority: priority as 'now' | 'next' | 'maintain' | 'paused',
+        ownerHours,
+        note: txt(x.note || '', 2000),
+      });
+    } else if (op === 'save_guided_draft') {
       const fields = object(x.fields);
       const confirmations = object(x.confirmations || {});
       const keys: BriefFieldKey[] = [
