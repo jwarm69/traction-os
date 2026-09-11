@@ -4,7 +4,7 @@ export type OwnerAction = {
   id: string;
   title: string;
   detail: string;
-  tab: 'memory' | 'signals' | 'rounds' | 'outreach' | 'reviews';
+  tab: 'memory' | 'signals' | 'rounds' | 'outreach' | 'reviews' | 'do' | 'portfolio';
 };
 
 /** Work that needs the owner, ordered by prerequisites and unresolved execution. */
@@ -79,6 +79,26 @@ export function ownerQueue(business: BusinessDocument): OwnerAction[] {
         ? 'Demo approval is saved for practice. Fictional messages cannot be sent.'
         : 'Use the Gmail account bound to the approval to send each message.',
       'outreach',
+    );
+  const blockedWork = (business.work?.endeavors || []).filter(
+    (item) => item.status === 'blocked',
+  );
+  if (blockedWork.length)
+    add(
+      'blocked-work',
+      `Resolve ${blockedWork.length} blocked work item${blockedWork.length === 1 ? '' : 's'}`,
+      'Review the recorded dependency, resume deliberately, or stop the work.',
+      'do',
+    );
+  const reviewableArtifacts = (business.work?.endeavors || []).flatMap((item) =>
+    item.artifacts.filter((artifact) => !artifact.reviewedAt),
+  );
+  if (reviewableArtifacts.length)
+    add(
+      'artifact-review',
+      `Review ${reviewableArtifacts.length} draft artifact${reviewableArtifacts.length === 1 ? '' : 's'}`,
+      'A draft is not approved, sent, published, or deployed until you review it and take that action separately.',
+      'do',
     );
   const open = business.rounds.find((r) => r.status !== 'complete');
   if (open) {

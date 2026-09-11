@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createClient } from '@libsql/client/web';
-const base = 'http://localhost:3000';
+const base = process.env.TEST_BASE_URL || 'http://localhost:3000';
 const owner = `traction-api-test-${crypto.randomUUID()}`,
   other = `traction-api-test-${crypto.randomUUID()}`;
 let current = null,
@@ -40,6 +40,112 @@ try {
     budget: 'Four hours',
     notes: 'No paid ads.',
   });
+  await act('create_idea', {
+    title: 'Creator collaboration',
+    kind: 'outreach',
+    description: 'Explore one relevant creator collaboration.',
+    audience: 'Independent owners',
+    outcome: 'Qualified visits',
+    ownerNotes: 'No paid placement.',
+    sources: ['https://example.com/creator'],
+  });
+  const ideaId = current.explore.ideas[0].id;
+  await act('update_idea', {
+    ideaId,
+    title: 'Creator content collaboration',
+    kind: 'content',
+    description: 'Develop one relevant creator collaboration.',
+    audience: 'Independent owners',
+    outcome: 'Qualified visits',
+    ownerNotes: 'No paid placement.',
+    sources: ['https://example.com/creator'],
+  });
+  await act('park_idea', { ideaId, reason: 'Wait for owner review.' });
+  assert.equal(current.explore.ideas[0].status, 'parked');
+  await act('restore_idea', { ideaId });
+  assert.equal(current.explore.ideas[0].status, 'active');
+  const beforeInvalidIdea = current.explore.ideas.length;
+  await act(
+    'create_idea',
+    {
+      title: 'Unsafe source',
+      kind: 'research',
+      description: 'This source must be rejected.',
+      sources: ['http://example.com'],
+    },
+    400,
+  );
+  assert.equal(current.explore.ideas.length, beforeInvalidIdea);
+  const chat = await act('explore_chat', {
+    message: 'Compare this idea with a recurring content series.',
+    ideaId,
+    key: '',
+  });
+  assert.equal(chat.warning, undefined);
+  assert.equal(current.explore.messages.at(-2).role, 'owner');
+  assert.equal(current.explore.messages.at(-1).role, 'assistant');
+  assert.equal(current.explore.messages.at(-1).suggestions.length, 1);
+  await act('run_ideation');
+  assert.equal(current.explore.messages.at(-1).suggestions.length, 3);
+  await act('select_idea', {
+    ideaId,
+    intendedDeliverables: ['A reviewed creator pitch'],
+    effortBudget: 'Two hours, no ad spend',
+    completionCriteria: 'One reviewed draft and a recorded next decision',
+  });
+  const endeavorId = current.work.endeavors[0].id;
+  await act('select_idea', {
+    ideaId,
+    intendedDeliverables: ['Duplicate must not be created'],
+    effortBudget: 'Two hours',
+    completionCriteria: 'No duplicate',
+  });
+  assert.equal(current.work.endeavors.length, 1);
+  await act('transition_work', { endeavorId, status: 'ready' });
+  await act('transition_work', { endeavorId, status: 'in_progress' });
+  await act('save_artifact', {
+    endeavorId,
+    kind: 'outreach',
+    title: 'Creator pitch',
+    content: 'A fictional integration-test draft.',
+  });
+  const artifactId = current.work.endeavors[0].artifacts[0].id;
+  await act('review_artifact', { endeavorId, artifactId });
+  await act('generate_artifact', {
+    endeavorId,
+    kind: 'product_brief',
+    title: 'First-value improvement brief',
+    instruction: 'Prepare a fictional demo brief.',
+  });
+  assert.equal(current.work.endeavors[0].artifacts.length, 2);
+  await act('add_research_candidate', {
+    endeavorId,
+    name: 'Example candidate',
+    url: 'https://example.org/',
+    observedFacts: ['Example Domain is a test fixture.'],
+    fitRationale: 'Useful only for integration verification.',
+    uncertainties: ['All real fit is unknown.'],
+  });
+  await act('add_observation', {
+    endeavorId,
+    summary: 'The draft was reviewed as an integration fixture.',
+    source: 'Integration test',
+    evidenceUrls: ['https://example.com/'],
+    actualEffort: 'Five minutes',
+    nextDecision: 'Do not send fictional outreach.',
+  });
+  await act('research_work', {
+    endeavorId,
+    query: 'Find one fictional demo candidate.',
+  });
+  assert.equal(current.work.endeavors[0].research.length, 2);
+  await act('transition_work', { endeavorId, status: 'completed' });
+  await act('set_portfolio', {
+    priority: 'now',
+    ownerHours: 2,
+    note: 'Integration-test priority.',
+  });
+  assert.equal(current.portfolio.priority, 'now');
   await act('create_demo');
   const second = current.id;
   assert.notEqual(first, second);

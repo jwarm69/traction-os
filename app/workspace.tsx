@@ -23,6 +23,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { BusinessDocument, Fact } from '@/lib/engine';
 import { ownerQueue } from '@/lib/owner-queue';
 import GuidedWorkspace from './guided-workspace';
+import ExploreWorkspace from './explore-workspace';
+import DoWorkspace from './do-workspace';
+import PortfolioWorkspace from './portfolio-workspace';
 type Summary = {
   id: string;
   name: string;
@@ -30,6 +33,13 @@ type Summary = {
   mode: string;
   revision: number;
   updatedAt: string;
+  portfolio?: BusinessDocument['portfolio'];
+  workSummary?: {
+    total: number;
+    active: number;
+    blocked: number;
+    latestObservation?: string;
+  };
 };
 type Res = {
   ai?: {
@@ -44,6 +54,7 @@ type Res = {
   revision: number;
   error?: string;
   gmail?: { email: string };
+  warning?: string;
 };
 type Act = (op: string, extra?: Record<string, unknown>) => Promise<boolean>;
 type FormState = Record<string, string>;
@@ -57,7 +68,7 @@ export default function Workspace({ username }: { username: string }) {
     [revision, setRevision] = useState(0),
     [busy, setBusy] = useState(''),
     [error, setError] = useState(''),
-    [tab, setTab] = useState('today'),
+    [tab, setTab] = useState('explore'),
     [key, setKey] = useState(''),
     [gmailToken, setGmail] = useState(''),
     [ga4Token, setGa4] = useState(''),
@@ -112,10 +123,10 @@ export default function Workspace({ username }: { username: string }) {
       accept(d);
       if (op === 'create_business' || op === 'create_demo') {
         setShowNew(false);
-        setTab('today');
+        setTab('explore');
         setForm({});
       }
-      setNotice(op === 'save_context' ? 'Business update saved. Future plans will use this context.' : op === 'organize_context' ? 'Your context summary is ready below.' : 'Saved to your business.');
+      setNotice(d.warning || (op === 'save_context' ? 'Business update saved. Future plans will use this context.' : op === 'organize_context' ? 'Your context summary is ready below.' : 'Saved to your business.'));
       return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not finish.');
@@ -140,7 +151,7 @@ export default function Workspace({ username }: { username: string }) {
       setShowNew(false);
       setError('');
       setNotice('');
-      setTab('today');
+      setTab('explore');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not switch businesses.');
     } finally {
@@ -210,7 +221,7 @@ export default function Workspace({ username }: { username: string }) {
             disabled={!!busy}
             onClick={() => {
               setShowNew(true);
-              setTab('today');
+      setTab('explore');
             }}
           >
             <Plus size={15} /> Add business
@@ -301,6 +312,9 @@ export default function Workspace({ username }: { username: string }) {
               <Tabs value={tab} onValueChange={(v) => setTab(String(v))}>
                 <TabsList className={`owner-tabs ${tab === 'today' ? 'compact-tabs' : ''}`} variant="line">
                   {[
+                    ['explore', 'Explore'],
+                    ['do', 'Do'],
+                    ['portfolio', 'Portfolio'],
                     ['today', 'Next move'],
                     ['memory', 'Business context'],
                     ['rounds', 'Growth plan'],
@@ -312,6 +326,15 @@ export default function Workspace({ username }: { username: string }) {
                   ))}
                 </TabsList>
                 {tab !== 'today' && <div className="secondary-tools"><Button variant="ghost" size="sm" onClick={() => setTab('outreach')}>Prospects & messages</Button><Button variant="ghost" size="sm" onClick={() => setTab('reviews')}>Weekly review</Button></div>}
+                <TabsContent value="explore">
+                  <ExploreWorkspace key={b.id} b={b} act={act} busy={!!busy} aiReady={b.mode === 'demo' || !!key || !!aiBudget?.enabled} openDo={() => setTab('do')} />
+                </TabsContent>
+                <TabsContent value="do">
+                  <DoWorkspace key={b.id} b={b} act={act} busy={!!busy} aiReady={b.mode === 'demo' || !!key || !!aiBudget?.enabled} />
+                </TabsContent>
+                <TabsContent value="portfolio">
+                  <PortfolioWorkspace key={`${b.id}:${revision}`} b={b} businesses={businesses} act={act} busy={!!busy} selectBusiness={(id) => { void select(id); }} />
+                </TabsContent>
                 <TabsContent value="today">
                   <GuidedWorkspace key={`${b.id}:${revision}`} b={b} act={act} busy={!!busy} username={username} revision={revision} />
                   <details className="more-progress"><summary>Existing tools and plan history</summary><p className="small muted">Older goals and growth rounds remain preserved as historical proposals. They are not approved by this guided flow.</p><Today b={b} act={act} setTab={setTab} queue={queue}/></details>

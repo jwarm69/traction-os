@@ -43,6 +43,10 @@ export function sessionToken(req: Request) {
   return value ? decodeURIComponent(value.slice(COOKIE.length + 1)) : '';
 }
 export async function authenticateRequest(r: Runtime, req: Request): Promise<AuthUser | null> {
+  if (r.ALLOW_DEV_IDENTITY === 'true') {
+    const id = text(req.headers.get('x-traction-dev-user-id')).trim().slice(0, 100);
+    if (id) return { id, username: id, name: id, email: null };
+  }
   const token = sessionToken(req);
   if (!token || token.length > 200) return null;
   const c = db(r);

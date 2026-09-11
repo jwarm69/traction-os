@@ -10,7 +10,7 @@ export async function runAI(
   providedKey: string,
   prompt: string,
   search = false,
-) {
+): Promise<Record<string, unknown>> {
   const key = runtime.OPENAI_API_KEY || providedKey;
   if (!key)
     throw Error(
@@ -42,6 +42,7 @@ export async function runAI(
           ? {
               tools: [{ type: 'web_search', search_context_size: 'low' }],
               tool_choice: 'required',
+              include: ['web_search_call.action.sources'],
             }
           : {}),
       }),
@@ -74,10 +75,45 @@ export async function runAI(
     const value = JSON.parse(raw) as unknown;
     if (!value || typeof value !== 'object' || Array.isArray(value))
       throw Error('Invalid output');
-    return value as Record<string, unknown>;
+    return {
+      ...(value as Record<string, unknown>),
+      ...(search ? { __searchSources: extractSearchSources(response) } : {}),
+    };
   } catch {
     throw Error(
       'AI returned an unreadable result. Your saved business was not changed.',
     );
   }
+}
+
+export function extractSearchSources(response: Record<string, unknown>) {
+  const urls = new Set<string>();
+  const output = Array.isArray(response.output)
+    ? (response.output as Record<string, unknown>[])
+    : [];
+  for (const item of output) {
+    const action = item.action && typeof item.action === 'object'
+      ? (item.action as Record<string, unknown>)
+      : undefined;
+    if (Array.isArray(action?.sources))
+      for (const source of action.sources) {
+        if (!source || typeof source !== 'object') continue;
+        const url = (source as Record<string, unknown>).url;
+        if (typeof url === 'string') urls.add(url);
+      }
+    if (!Array.isArray(item.content)) continue;
+    for (const content of item.content as Record<string, unknown>[]) {
+      if (!Array.isArray(content.annotations)) continue;
+      for (const annotation of content.annotations) {
+        if (!annotation || typeof annotation !== 'object') continue;
+        const value = annotation as Record<string, unknown>;
+        const nested = value.url_citation && typeof value.url_citation === 'object'
+          ? (value.url_citation as Record<string, unknown>).url
+          : undefined;
+        const url = typeof value.url === 'string' ? value.url : nested;
+        if (typeof url === 'string') urls.add(url);
+      }
+    }
+  }
+  return [...urls];
 }

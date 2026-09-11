@@ -25,6 +25,19 @@ export async function listBusinesses(r: R, u: string) {
       mode: d.mode,
       revision: Number(row.revision),
       updatedAt: s(row.updated_at),
+      portfolio: d.portfolio,
+      workSummary: {
+        total: d.work?.endeavors.length || 0,
+        active:
+          d.work?.endeavors.filter((item) =>
+            ['preparing', 'ready', 'in_progress', 'blocked'].includes(item.status),
+          ).length || 0,
+        blocked:
+          d.work?.endeavors.filter((item) => item.status === 'blocked').length || 0,
+        latestObservation: d.work?.endeavors
+          .flatMap((item) => item.observations || [])
+          .sort((a, b) => b.observedAt.localeCompare(a.observedAt))[0]?.summary,
+      },
     };
   });
 }

@@ -164,6 +164,119 @@ export type GuidedFlow = {
   contextChangeNotice?: string;
   updatedAt: string;
 };
+export type IdeaKind =
+  | 'research'
+  | 'content'
+  | 'outreach'
+  | 'campaign'
+  | 'experiment'
+  | 'product_improvement';
+export type ExploreSuggestion = {
+  title: string;
+  kind: IdeaKind;
+  description: string;
+  audience: string;
+  outcome: string;
+};
+export type MarketingIdea = ExploreSuggestion & {
+  id: string;
+  ownerNotes: string;
+  sources: string[];
+  status: 'active' | 'parked';
+  parkedReason?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+export type ExploreMessage = {
+  id: string;
+  role: 'owner' | 'assistant';
+  content: string;
+  createdAt: string;
+  ideaId?: string;
+  suggestions?: ExploreSuggestion[];
+};
+export type ExploreState = {
+  ideas: MarketingIdea[];
+  messages: ExploreMessage[];
+};
+export type EndeavorStatus =
+  | 'preparing'
+  | 'ready'
+  | 'in_progress'
+  | 'blocked'
+  | 'completed'
+  | 'stopped';
+export type ArtifactKind =
+  | 'content'
+  | 'outreach'
+  | 'research_notes'
+  | 'product_brief';
+export type ArtifactVersion = {
+  id: string;
+  number: number;
+  content: string;
+  createdAt: string;
+  source: 'owner' | 'assistant';
+};
+export type WorkArtifact = {
+  id: string;
+  kind: ArtifactKind;
+  title: string;
+  versions: ArtifactVersion[];
+  activeVersionId: string;
+  reviewedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+export type ResearchCandidate = {
+  id: string;
+  name: string;
+  url: string;
+  retrievedAt: string;
+  observedFacts: string[];
+  fitRationale: string;
+  uncertainties: string[];
+  status: 'unreviewed' | 'shortlisted' | 'rejected';
+  rejectionReason?: string;
+};
+export type WorkObservation = {
+  id: string;
+  summary: string;
+  evidenceUrls: string[];
+  observedAt: string;
+  source: string;
+  actualEffort: string;
+  nextDecision: string;
+};
+export type Endeavor = {
+  id: string;
+  sourceIdeaId?: string;
+  sourceGuidedProposalId?: string;
+  sourceIdeaSnapshot?: MarketingIdea;
+  sourceIdeaUpdatedAt?: string;
+  title: string;
+  kind: IdeaKind;
+  description: string;
+  intendedDeliverables: string[];
+  effortBudget: string;
+  completionCriteria: string;
+  status: EndeavorStatus;
+  blockedReason?: string;
+  checklist: { id: string; text: string; done: boolean }[];
+  artifacts: WorkArtifact[];
+  research: ResearchCandidate[];
+  observations: WorkObservation[];
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+};
+export type PortfolioState = {
+  priority: 'now' | 'next' | 'maintain' | 'paused';
+  ownerHours: number | null;
+  note: string;
+  updatedAt: string;
+};
+export type WorkState = { endeavors: Endeavor[] };
 export type BusinessDocument = {
   version: 2;
   id: string;
@@ -177,6 +290,9 @@ export type BusinessDocument = {
   notes: string;
   contextDraft?: { summary: string; questions: string[]; generatedAt: string };
   guided?: GuidedFlow;
+  explore?: ExploreState;
+  work?: WorkState;
+  portfolio?: PortfolioState;
   facts: Fact[];
   signals: Signal[];
   diagnosis?: Diagnosis;
@@ -700,6 +816,18 @@ export function weeklyReview(business: BusinessDocument): Review {
   const pending = business.outreach.prospects.filter((p) =>
     ['drafted', 'approved', 'sending', 'uncertain'].includes(p.status),
   );
+  const endeavors = business.work?.endeavors || [];
+  const completedWork = endeavors.filter(
+    (item) =>
+      item.status === 'completed' &&
+      item.completedAt &&
+      new Date(item.completedAt) >= start &&
+      new Date(item.completedAt) <= end,
+  );
+  const activeWork = endeavors.filter((item) =>
+    ['preparing', 'ready', 'in_progress', 'blocked'].includes(item.status),
+  );
+  const blockedWork = activeWork.filter((item) => item.status === 'blocked');
   const decisions: string[] = [];
   if (wins.length)
     decisions.push(
@@ -721,6 +849,14 @@ export function weeklyReview(business: BusinessDocument): Review {
     decisions.push(
       'Some completed tests lack numeric results; keep their outcomes unknown until measured.',
     );
+  if (completedWork.length)
+    decisions.push(
+      `${completedWork.length} work item${completedWork.length === 1 ? '' : 's'} completed. Review recorded observations before treating any deliverable as an external action or business outcome.`,
+    );
+  if (blockedWork.length)
+    decisions.push(
+      `Resolve, resume, or stop ${blockedWork.length} blocked Do item${blockedWork.length === 1 ? '' : 's'}.`,
+    );
   if (!decisions.length)
     decisions.push(
       business.diagnosis?.recommendation ||
@@ -731,9 +867,11 @@ export function weeklyReview(business: BusinessDocument): Review {
     periodStart: start.toISOString(),
     periodEnd: end.toISOString(),
     createdAt: end.toISOString(),
-    summary: completed.length
-      ? `${completed.length} experiment${completed.length === 1 ? '' : 's'} completed in the last seven days; ${wins.length} met target. ${running.length} still running.`
-      : `No experiments completed in the last seven days. ${running.length} currently running.`,
+    summary: `${
+      completed.length
+        ? `${completed.length} experiment${completed.length === 1 ? '' : 's'} completed in the last seven days; ${wins.length} met target. ${running.length} still running.`
+        : `No experiments completed in the last seven days. ${running.length} currently running.`
+    } ${completedWork.length} Do work item${completedWork.length === 1 ? '' : 's'} completed; ${activeWork.length} active. Work completion does not itself establish acquisition or business impact.`,
     wins,
     misses,
     decisions,
