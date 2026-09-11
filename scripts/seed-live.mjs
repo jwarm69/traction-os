@@ -100,7 +100,7 @@ try {
   self.goal =
     'Proposed pilot: five business owners complete one measured growth experiment in 30 days.';
   self.budget =
-    'Proposed pilot: founder time only, no advertising spend. Shared app AI has a separate $10 ceiling.';
+    'Proposed pilot: founder time only, no advertising spend. Shared app AI has a separate $5 ceiling.';
   self.notes =
     'Treat this product as a business. Validate the audience and willingness to pay before scaling. Do not claim customers, revenue, or results without evidence. Goal and resources are provisional and need owner review.';
   self.facts = [

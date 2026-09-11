@@ -21,7 +21,7 @@ export const reservationMicros = (search: boolean) =>
   search ? 1250000 : 125000;
 export async function budgetStatus(r: BudgetRuntime, pool = 'public-beta') {
   if (!r.OPENAI_API_KEY)
-    return { enabled: false, limit: 10, used: 0, remaining: 0, held: 0 };
+    return { enabled: false, limit: 5, used: 0, remaining: 0, held: 0 };
   const c = db(r);
   try {
     const q = await c.execute({
