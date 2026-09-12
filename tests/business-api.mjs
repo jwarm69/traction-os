@@ -84,9 +84,17 @@ try {
   assert.equal(chat.warning, undefined);
   assert.equal(current.explore.messages.at(-2).role, 'owner');
   assert.equal(current.explore.messages.at(-1).role, 'assistant');
-  assert.equal(current.explore.messages.at(-1).suggestions.length, 1);
+  assert.equal(current.explore.messages.at(-1).suggestions.length, 3);
   await act('run_ideation');
   assert.equal(current.explore.messages.at(-1).suggestions.length, 3);
+  const guidedMessage = current.explore.messages.at(-1);
+  const beforeGuidedPursuit = current.work?.endeavors.length || 0;
+  await act('pursue_suggestion', {
+    messageId: guidedMessage.id,
+    suggestionIndex: 0,
+  });
+  assert.equal(current.work.endeavors.length, beforeGuidedPursuit + 1);
+  assert.match(current.work.endeavors[0].effortBudget, /owner approval/i);
   await act('select_idea', {
     ideaId,
     intendedDeliverables: ['A reviewed creator pitch'],
