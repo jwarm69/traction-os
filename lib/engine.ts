@@ -194,6 +194,9 @@ export type ExploreMessage = {
   createdAt: string;
   ideaId?: string;
   suggestions?: ExploreSuggestion[];
+  recommendedSuggestionIndex?: number;
+  recommendationReason?: string;
+  nextQuestion?: string;
 };
 export type ExploreState = {
   ideas: MarketingIdea[];

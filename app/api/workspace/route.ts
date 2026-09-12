@@ -42,6 +42,7 @@ import {
   addChecklistItem,
   addObservation,
   addResearchCandidates,
+  defaultWorkBrief,
   endeavorFor,
   prepareGuidedProposal,
   reviewArtifact,
@@ -418,6 +419,29 @@ export async function POST(req: Request) {
       );
     } else if (op === 'restore_idea') {
       restoreIdea(b, required(x.ideaId, 100));
+    } else if (op === 'pursue_idea') {
+      const ideaId = required(x.ideaId, 100);
+      const idea = b.explore?.ideas.find((item) => item.id === ideaId);
+      if (!idea) throw Error('Explore idea not found.');
+      if (idea.status !== 'active')
+        throw Error('Restore this direction before pursuing it.');
+      selectIdea(b, ideaId, defaultWorkBrief(idea));
+    } else if (op === 'pursue_suggestion') {
+      const messageId = required(x.messageId, 100);
+      const suggestionIndex = numeric(x.suggestionIndex);
+      if (!Number.isInteger(suggestionIndex))
+        throw Error('Choose a valid direction.');
+      const message = b.explore?.messages.find(
+        (item) => item.id === messageId && item.role === 'assistant',
+      );
+      const suggestion = message?.suggestions?.[suggestionIndex];
+      if (!suggestion) throw Error('Explore direction not found.');
+      const idea = createIdea(b, {
+        ...suggestion,
+        ownerNotes: 'Pursued from a guided Explore discussion.',
+        sources: [],
+      });
+      selectIdea(b, idea.id, defaultWorkBrief(idea));
     } else if (op === 'explore_chat') {
       const message = required(x.message, 5000);
       const ideaId = txt(x.ideaId || '', 100) || undefined;
@@ -487,13 +511,35 @@ export async function POST(req: Request) {
                     outcome:
                       'A reviewed content format ready for a small owner-controlled test',
                   },
+                  {
+                    title: 'Creator-fit research sprint',
+                    kind: 'research',
+                    description:
+                      'Build a sourced shortlist of creators whose public work already overlaps the confirmed audience problem.',
+                    audience: 'Relevant creator audiences',
+                    outcome:
+                      'A reviewed shortlist with one plausible collaboration route',
+                  },
+                  {
+                    title: 'First-value friction review',
+                    kind: 'product_improvement',
+                    description:
+                      'Walk through the path from arrival to first useful outcome and identify the single highest-friction step.',
+                    audience: 'New eligible users',
+                    outcome: 'One implementation-ready improvement brief',
+                  },
                 ],
+                recommendedSuggestionIndex: 0,
+                recommendationReason:
+                  'It is owner-controlled and can be tested without depending on a new partnership.',
+                nextQuestion:
+                  'How much time can you realistically give the first test this week?',
               }
             : await runAI(
                 runtime(),
                 u.id,
                 txt(x.key || '', 500),
-                `Help the owner explore marketing and product-growth possibilities. Return {reply,suggestions:[{title,kind,description,audience,outcome}]}. Reply in at most 500 words with concrete reasoning, alternatives, important unknowns, and at most three focused questions when useful. Provide 0-3 suggestions only when they are worth saving. kind must be research, content, outreach, campaign, experiment, or product_improvement. Suggestions are proposals, not researched evidence. Do not invent sources, contacts, audience sizes, prices, partnerships, results, or completed work. Owner statements and confirmed facts may guide ideas; unreviewed facts remain provisional. Do not silently change business facts or existing ideas. Context: ${JSON.stringify(context)}`,
+                `Act as a proactive growth strategist. Return {reply,suggestions:[{title,kind,description,audience,outcome}],recommendedSuggestionIndex,recommendationReason,nextQuestion}. Give a concise point of view, 2-4 genuinely distinct routes when useful, recommend exactly one route when suggestions exist, and ask no more than one high-leverage nextQuestion. Do not make the owner fill in information you can reasonably infer from saved context. kind must be research, content, outreach, campaign, experiment, or product_improvement. Suggestions are proposals, not researched evidence. Do not invent sources, contacts, audience sizes, prices, partnerships, results, or completed work. Owner statements and confirmed facts may guide ideas; unreviewed facts remain provisional. Do not silently change business facts or existing ideas. Context: ${JSON.stringify(context)}`,
               );
       } catch (error) {
         return out({
@@ -506,10 +552,13 @@ export async function POST(req: Request) {
       }
       let reply: string;
       let suggestions: ExploreSuggestion[];
+      let recommendedSuggestionIndex: number | undefined;
+      let recommendationReason: string | undefined;
+      let nextQuestion: string | undefined;
       try {
         reply = required(answer.reply, 5000);
         suggestions = Array.isArray(answer.suggestions)
-          ? answer.suggestions.slice(0, 3).map((value) => {
+          ? answer.suggestions.slice(0, 4).map((value) => {
               const suggestion = object(value);
               return {
                 title: required(suggestion.title, 160),
@@ -520,6 +569,18 @@ export async function POST(req: Request) {
               };
             })
           : [];
+        const recommended = Number(answer.recommendedSuggestionIndex);
+        recommendedSuggestionIndex =
+          Number.isInteger(recommended) &&
+          recommended >= 0 &&
+          recommended < suggestions.length
+            ? recommended
+            : suggestions.length
+              ? 0
+              : undefined;
+        recommendationReason =
+          txt(answer.recommendationReason || '', 1200) || undefined;
+        nextQuestion = txt(answer.nextQuestion || '', 800) || undefined;
       } catch {
         return out({
           ...(await loadOrImport(u, id)),
@@ -539,6 +600,9 @@ export async function POST(req: Request) {
         content: reply,
         ideaId,
         suggestions,
+        recommendedSuggestionIndex,
+        recommendationReason,
+        nextQuestion,
       });
       const finalRevision = await saveBusiness(
         runtime(),
