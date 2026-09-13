@@ -5,6 +5,8 @@ import {
   diagnose,
   createRound,
   weeklyReview,
+  saveMarket,
+  removeMarket,
 } from '../lib/engine.ts';
 
 const signal = (metric, value, period = 'September 1–7') => ({
@@ -77,6 +79,47 @@ await test('invalid AI proposals cannot create a round', () => {
   }));
   assert.throws(() => createRound(b, 'Bad', invalid), /positive target/);
   assert.equal(b.rounds.length, 0);
+});
+
+await test('markets keep local evidence separate and remain editable', () => {
+  const b = calibrated();
+  const uf = saveMarket(b, {
+    name: 'University of Florida',
+    code: 'UF',
+    location: 'Gainesville, Florida',
+    status: 'traction',
+    objective: 'Confirm repeat student usage.',
+    evidence: 'Owner reports prior progress; exact metrics remain unknown.',
+    nextMove: 'Reconcile the UF baseline.',
+  });
+  const fau = saveMarket(b, {
+    name: 'Florida Atlantic University',
+    code: 'FAU',
+    location: 'Boca Raton, Florida',
+    status: 'validating',
+    objective: 'Validate campus demand.',
+    evidence: 'No campus-specific outcome evidence recorded.',
+    nextMove: 'Run five discovery conversations.',
+  });
+  saveMarket(
+    b,
+    { ...uf, status: 'paused', evidence: 'UF evidence only.' },
+    uf.id,
+  );
+  assert.equal(b.markets.length, 2);
+  assert.equal(
+    b.markets.find((market) => market.id === uf.id).status,
+    'paused',
+  );
+  assert.equal(
+    b.markets.find((market) => market.id === fau.id).evidence,
+    'No campus-specific outcome evidence recorded.',
+  );
+  removeMarket(b, fau.id);
+  assert.deepEqual(
+    b.markets.map((market) => market.code),
+    ['UF'],
+  );
 });
 
 await test('weekly review excludes old and future outcomes and includes unresolved sends', () => {

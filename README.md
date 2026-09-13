@@ -6,7 +6,9 @@ See [ROADMAP.md](ROADMAP.md) for the short- and long-term product milestones, re
 
 The current product has three owner modes. Explore keeps ideas and durable human/AI discussion. Do freezes a selected direction, produces versioned artifacts, keeps sourced research inspectable, and records external observations without confusing drafts with outcomes. Portfolio shows priority, owner-time commitment, active/blocked work, and latest learning across businesses.
 
-The first [four-business ideation pass](docs/FOUR-BUSINESS-IDEATION.md) is ready for AlignIQ Golf, Astro-Log, Tonight, and Traction OS.
+The paired local Codex runner is a gated beta. See [runner setup and limitations](docs/RUNNER.md). It adds device pairing, queued tasks, owner approval requests, and returned text without uploading Codex login credentials. `RUNNER_ENABLED` defaults off; migration 007 and a signed-in end-to-end check are required before rollout.
+
+The owner portfolio also supports market-level operating records, so a business can keep campus, city, or segment progress distinct. Bite Club Meal Plan uses this to separate UF evidence from FAU and FSU expansion work while the venture is paused.
 
 ## Public beta and shared AI
 
@@ -16,7 +18,7 @@ The `public-beta` ledger in Turso starts with a cumulative $5 ceiling, aligned t
 
 Pricing verified September 9, 2026: [GPT-5.4 mini](https://developers.openai.com/api/docs/models/gpt-5.4-mini), [search pricing](https://developers.openai.com/api/docs/pricing). The model is pinned to `gpt-5.4-mini-2026-03-17`, standard service tier, 3,500 output tokens, two maximum tool calls, and bounded prompts. Review these assumptions before changing the model or pricing. An operator can top up by increasing the existing ledger ceiling; never delete spend records to refill it.
 
-Owner starter records attach only to the seeded owner account. AlignIQ Golf, Astro-Log, Tonight, and this product have private pilot briefs and provisional three-channel rounds. These are plans, not completed campaigns. Their research and proposed goals need owner calibration; no messages were sent.
+Owner starter records attach only to the seeded owner account. AlignIQ Golf, Astro-Log, Tonight, Bite Club Meal Plan, and this product have private operating records. Bite Club is explicitly paused and its campus entries do not imply that UF progress transfers to FAU or FSU. Proposed plans need owner calibration; no messages were sent.
 
 A private, multi-business GTM operating system: inspectable memory → sourced signals → bottleneck diagnosis → experiment rounds → outreach → weekly review.
 
@@ -30,6 +32,8 @@ npm run dev
 ```
 
 Local and production runs require `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. Founder-funded AI also requires a server-side `OPENAI_API_KEY`. Apply the SQL files in `migrations/` in order. To seed an owner, provide `OWNER_USERNAME`, `OWNER_PIN`, and `OWNER_EMAIL` alongside the Turso variables and run `node scripts/seed-owner.mjs`.
+
+To add or refresh the paused Bite Club starter, provide `OWNER_EMAIL` and the Turso variables, then run `npm run seed:bite-club`. The seed is idempotent and keeps UF, FAU, and FSU as independent campus records.
 
 Open the local URL printed by the server. The demo is fully fictional and cannot send email. A real workspace remains useful without an AI key for owner facts, manual or CSV signals, deterministic diagnosis, saved results, and reviews. Live research, prospect discovery, tailored drafts, and new live experiment rounds require an OpenAI key for the current tab.
 

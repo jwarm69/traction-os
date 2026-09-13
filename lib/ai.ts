@@ -11,12 +11,17 @@ export async function runAI(
   prompt: string,
   search = false,
 ): Promise<Record<string, unknown>> {
-  const key = runtime.OPENAI_API_KEY || providedKey;
+  // A key supplied for this request is an explicit BYO choice. Keep it on the
+  // request path and out of the shared reservation ledger; never retry it
+  // against the server key if the personal request fails.
+  const personalKey = providedKey.trim();
+  const usingPersonalKey = Boolean(personalKey);
+  const key = personalKey || runtime.OPENAI_API_KEY;
   if (!key)
     throw Error(
       'Live AI is not connected. Manual data and the demo remain available.',
     );
-  const reservation = runtime.OPENAI_API_KEY
+  const reservation = !usingPersonalKey && runtime.OPENAI_API_KEY
     ? await reserveAI(runtime, userId, search)
     : null;
   let response: Record<string, unknown> | null = null;

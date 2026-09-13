@@ -7,6 +7,7 @@ import {
   addChecklistItem,
   addObservation,
   addResearchCandidates,
+  defaultWorkBrief,
   reviewArtifact,
   reviewResearchCandidate,
   saveArtifact,
@@ -26,6 +27,14 @@ const input = {
   ownerNotes: 'No paid placement.',
   sources: ['https://example.com/creator'],
 };
+
+await test('guided Explore infers a bounded Do brief without another form', () => {
+  const brief = defaultWorkBrief(input);
+  assert.equal(brief.intendedDeliverables.length, 2);
+  assert.match(brief.intendedDeliverables[0], /prospect list/i);
+  assert.match(brief.effortBudget, /owner approval/i);
+  assert.equal(brief.completionCriteria, input.outcome);
+});
 
 await test('S3 selects a frozen idea idempotently and guards work transitions', () => {
   const business = demoBusiness();

@@ -26,6 +26,7 @@ import GuidedWorkspace from './guided-workspace';
 import ExploreWorkspace from './explore-workspace';
 import DoWorkspace from './do-workspace';
 import PortfolioWorkspace from './portfolio-workspace';
+import MarketsWorkspace from './markets-workspace';
 type Summary = {
   id: string;
   name: string;
@@ -315,6 +316,7 @@ export default function Workspace({ username }: { username: string }) {
                     ['explore', 'Explore'],
                     ['do', 'Do'],
                     ['portfolio', 'Portfolio'],
+                    ['markets', b.marketLabel === 'Campus' ? 'Campuses' : 'Markets'],
                     ['today', 'Next move'],
                     ['memory', 'Business context'],
                     ['rounds', 'Growth plan'],
@@ -330,10 +332,13 @@ export default function Workspace({ username }: { username: string }) {
                   <ExploreWorkspace key={b.id} b={b} act={act} busy={!!busy} aiReady={b.mode === 'demo' || !!key || !!aiBudget?.enabled} openDo={() => setTab('do')} />
                 </TabsContent>
                 <TabsContent value="do">
-                  <DoWorkspace key={b.id} b={b} act={act} busy={!!busy} aiReady={b.mode === 'demo' || !!key || !!aiBudget?.enabled} />
+                  <DoWorkspace key={b.id} b={b} revision={revision} act={act} busy={!!busy} aiReady={b.mode === 'demo' || !!key || !!aiBudget?.enabled} />
                 </TabsContent>
                 <TabsContent value="portfolio">
                   <PortfolioWorkspace key={`${b.id}:${revision}`} b={b} businesses={businesses} act={act} busy={!!busy} selectBusiness={(id) => { void select(id); }} />
+                </TabsContent>
+                <TabsContent value="markets">
+                  <MarketsWorkspace key={`${b.id}:${revision}`} b={b} act={act} busy={!!busy} />
                 </TabsContent>
                 <TabsContent value="today">
                   <GuidedWorkspace key={`${b.id}:${revision}`} b={b} act={act} busy={!!busy} username={username} revision={revision} />
@@ -1176,8 +1181,9 @@ function Connections(p: {
           <p className="eyebrow">SESSION CONNECTIONS</p>
           <h2>Connected services</h2>
           <p className="muted">
-            Shared AI runs on the server. Your optional personal service tokens
-            stay in this tab and are never included in saved business data.
+            Use the included shared credits, or paste your own OpenAI API key
+            for this session. Personal keys stay in this tab and are never
+            included in saved business data or charged against shared credits.
           </p>
         </div>
         <KeyRound />
@@ -1189,18 +1195,23 @@ function Connections(p: {
         </p>
         {p.sharedAI ? (
           <p className="connected">
-            Founder-funded AI is connected. No OpenAI key needed. Requests pause
-            when the shared budget cannot cover the next run.
+            Included shared credits are available. Requests pause when the
+            shared balance cannot cover the next run.
           </p>
-        ) : (
-          <Input
-            type="password"
-            autoComplete="off"
-            placeholder="OpenAI API key"
-            value={p.keyValue}
-            onChange={(e) => p.setKey(e.target.value)}
-          />
-        )}
+        ) : null}
+        <label htmlFor="personal-openai-key">Personal OpenAI API key <span className="muted">(optional)</span></label>
+        <Input
+          id="personal-openai-key"
+          type="password"
+          autoComplete="off"
+          placeholder="sk-…"
+          value={p.keyValue}
+          onChange={(e) => p.setKey(e.target.value)}
+        />
+        <p className="small muted">
+          Your key takes priority for your requests and uses your OpenAI
+          account. It is held only in this browser session.
+        </p>
       </div>
       <div className="connection-card">
         <h3>Gmail</h3>

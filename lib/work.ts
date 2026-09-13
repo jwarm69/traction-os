@@ -25,6 +25,43 @@ function ideaFor(business: BusinessDocument, ideaId: string) {
   return idea;
 }
 
+export function defaultWorkBrief(idea: MarketingIdea) {
+  const deliverables: Record<MarketingIdea['kind'], string[]> = {
+    research: [
+      `Research the strongest candidates or channels for ${idea.title}`,
+      'Record sourced findings and a clear recommendation',
+    ],
+    content: [
+      `Draft the first usable version of ${idea.title}`,
+      'Review the draft and choose the smallest distribution test',
+    ],
+    outreach: [
+      `Build a small, relevant prospect list for ${idea.title}`,
+      'Draft one owner-reviewed outreach message',
+    ],
+    campaign: [
+      `Create a one-page campaign brief for ${idea.title}`,
+      'Prepare the first owner-reviewed campaign asset',
+    ],
+    experiment: [
+      `Define the smallest test for ${idea.title}`,
+      'Record the result and the next decision',
+    ],
+    product_improvement: [
+      `Create an implementation-ready brief for ${idea.title}`,
+      'Define how the improvement will be checked after release',
+    ],
+  };
+  return {
+    intendedDeliverables: deliverables[idea.kind],
+    effortBudget:
+      'Start with one focused work session; require owner approval before any external spend or send.',
+    completionCriteria:
+      idea.outcome ||
+      'The first deliverable is reviewed and the next decision is recorded.',
+  };
+}
+
 export function selectIdea(
   business: BusinessDocument,
   ideaId: string,
@@ -192,6 +229,7 @@ export function saveArtifact(
     title: string;
     content: string;
     source: 'owner' | 'assistant';
+    sourceEvidence?: string[];
   },
 ) {
   const endeavor = endeavorFor(business, endeavorId);
@@ -216,6 +254,7 @@ export function saveArtifact(
       activeVersionId: version.id,
       createdAt: at,
       updatedAt: at,
+      sourceEvidence: input.sourceEvidence?.slice(0, 50),
     };
     endeavor.artifacts.push(artifact);
   } else {
@@ -224,6 +263,7 @@ export function saveArtifact(
     artifact.versions.push(version);
     artifact.activeVersionId = version.id;
     artifact.reviewedAt = undefined;
+    artifact.sourceEvidence = input.sourceEvidence?.slice(0, 50);
     artifact.updatedAt = at;
   }
   endeavor.updatedAt = at;

@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { Check, Copy, Download, ExternalLink, Plus, Search } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { AlertCircle, Check, CheckCircle2, Copy, Download, ExternalLink, FileText, Loader2, Play, Plus, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -10,8 +10,12 @@ import type {
   BusinessDocument,
   Endeavor,
   EndeavorStatus,
+  ExecutionRun,
 } from '@/lib/engine';
 import { activeArtifact, sourceIdeaChanged } from '@/lib/work';
+import { buildAgentBrief } from '@/lib/agent-brief';
+import './do-execution.css';
+import RunnerPanel from './runner-panel';
 
 type Act = (op: string, extra?: Record<string, unknown>) => Promise<boolean>;
 const statusLabels: Record<EndeavorStatus, string> = {
@@ -37,16 +41,29 @@ const possible: Record<EndeavorStatus, EndeavorStatus[]> = {
   stopped: ['preparing'],
 };
 
+function ExecutionRunCard({ run }: { run: ExecutionRun }) {
+  const status = run.status === 'running' ? 'running' : run.status === 'succeeded' ? 'succeeded' : 'failed';
+  const label = status === 'running' ? 'Working' : status === 'succeeded' ? 'Result ready' : 'Needs attention';
+  return <article className={`execution-run ${status}`}>
+    <div className="execution-run-top"><span className={`execution-run-status ${status}`}>{status === 'running' && <Loader2 size={13} className="spin" />}{status === 'succeeded' && <CheckCircle2 size={13} />}{status === 'failed' && <AlertCircle size={13} />}{label}</span><small>{new Date(run.startedAt).toLocaleString()}</small></div>
+    {status === 'running' && <p className="muted">The agent is working from the frozen Do brief. Keep this page open until it finishes; if the run loses its lease, reload to recover and retry.</p>}
+    {status === 'failed' && <p className="execution-error">{run.error || 'The execution could not finish.'}</p>}
+    {status === 'succeeded' && <><p className="execution-instruction">{run.instruction}</p>{run.artifactId && <p className="small muted">A reviewable artifact was added to this endeavor.</p>}{run.nextDecision && <div className="execution-next"><strong>Next decision</strong><p>{run.nextDecision}</p></div>}</>}
+  </article>;
+}
+
 export default function DoWorkspace({
   b,
   act,
   busy,
   aiReady,
+  revision,
 }: {
   b: BusinessDocument;
   act: Act;
   busy: boolean;
   aiReady: boolean;
+  revision: number;
 }) {
   const endeavors = b.work?.endeavors || [];
   const [selectedId, setSelectedId] = useState(endeavors[0]?.id || '');
@@ -66,6 +83,7 @@ export default function DoWorkspace({
   const [candidate, setCandidate] = useState({ name: '', url: '', facts: '', rationale: '', uncertainties: '' });
   const [rejectReason, setRejectReason] = useState('');
   const [observation, setObservation] = useState({ summary: '', evidence: '', source: '', effort: '', decision: '' });
+  const [now, setNow] = useState(() => Date.now());
   const activeIdeas = (b.explore?.ideas || []).filter(
     (idea) =>
       idea.status === 'active' &&
@@ -75,6 +93,13 @@ export default function DoWorkspace({
     () => selected?.artifacts.find((item) => item.id === artifactId),
     [selected, artifactId],
   );
+  const runs = selected?.executionRuns || [];
+  const latestRun = runs[0];
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const runningLeaseActive = latestRun?.status === 'running' && new Date(latestRun.leaseExpiresAt).getTime() > now;
 
   const prepare = async () => {
     const ok = await act('select_idea', {
@@ -131,6 +156,11 @@ export default function DoWorkspace({
     const content = shortlisted.map((item) => `## ${item.name}\n\nSource: ${item.url}\nRetrieved: ${item.retrievedAt}\n\nObserved facts:\n${item.observedFacts.map((fact) => `- ${fact}`).join('\n')}\n\nFit rationale:\n${item.fitRationale}\n\nUnknowns:\n${item.uncertainties.map((value) => `- ${value}`).join('\n')}`).join('\n\n');
     await act('save_artifact', { endeavorId: selected.id, kind: 'research_notes', title: `${selected.title} — shortlisted research`, content });
   };
+  const runWork = async () => {
+    if (!selected) return;
+    await act('run_work', { endeavorId: selected.id });
+  };
+  const agentBrief = selected ? buildAgentBrief(b, selected) : '';
 
   return (
     <section className="do-shell">
@@ -159,13 +189,19 @@ export default function DoWorkspace({
           <p>{selected.description}</p>
           {sourceIdeaChanged(b, selected) && <p className="context-warning">The Explore idea changed after this work was selected. This brief still uses the frozen version.</p>}
           <div className="work-brief-grid"><div><strong>Effort / budget</strong><p>{selected.effortBudget}</p></div><div><strong>Completion means</strong><p>{selected.completionCriteria}</p></div></div>
+          <div className="execution-hero">
+            <div className="execution-hero-copy"><span className="eyebrow">AUTONOMOUS DO</span><h3>Ready to carry this forward?</h3><p className="muted">Traction OS will use its AI research and drafting path to return a reviewable result. External actions still come back to you for judgment.</p></div>
+            <div className="execution-hero-actions"><Button className="do-primary" size="lg" disabled={busy || !aiReady || selected.status === 'stopped' || selected.status === 'completed' || !!runningLeaseActive} onClick={runWork}><Play size={16} fill="currentColor" /> {runningLeaseActive ? 'Running…' : latestRun?.status === 'running' ? 'Retry run' : 'Do this'}</Button><Button variant="outline" size="sm" disabled={!agentBrief} onClick={() => download(`${selected.title} agent brief`, agentBrief)}><FileText size={14} /> Download manual brief</Button></div>
+          </div>
+          <RunnerPanel b={b} selected={selected} revision={revision} />
+          {runs.length > 0 && <div className="execution-runs" aria-live="polite"><div className="execution-runs-heading"><div><span className="eyebrow">EXECUTION</span><h3>Runs and decisions</h3></div><span className="small muted">{runs.length} run{runs.length === 1 ? '' : 's'}</span></div>{runs.map((run) => <ExecutionRunCard key={run.id} run={run} />)}</div>}
           {selected.blockedReason && <p className="parked-reason">Blocked: {selected.blockedReason}</p>}
           <div className="status-actions">{possible[selected.status].map((status) => <Button key={status} size="sm" variant="outline" disabled={busy || (status === 'blocked' && !blockedReason.trim())} onClick={() => changeStatus(status)}>Move to {statusLabels[status]}</Button>)}</div>
           {possible[selected.status].includes('blocked') && <Input value={blockedReason} onChange={(event) => setBlockedReason(event.target.value)} placeholder="Required before marking blocked" />}
 
           <div className="work-section"><h3>Checklist</h3>{selected.checklist.map((item) => <label className="check-row" key={item.id}><input type="checkbox" checked={item.done} onChange={(event) => act('set_checklist_item', { endeavorId: selected.id, itemId: item.id, done: event.target.checked })} /><span>{item.text}</span></label>)}<div className="inline-add"><Input value={step} onChange={(event) => setStep(event.target.value)} placeholder="Add a preparation step" /><Button size="sm" disabled={busy || !step.trim()} onClick={async () => { if (await act('add_checklist_item', { endeavorId: selected.id, text: step })) setStep(''); }}><Plus size={14} /> Add</Button></div></div>
 
-          <div className="work-section"><h3>Artifacts</h3><p className="small muted">Drafting never means sent, published, or deployed. Every edit creates a version.</p>{selected.artifacts.map((item) => { const version = activeArtifact(item); return <article className="artifact-card" key={item.id}><div><span className="idea-kind">{artifactLabels[item.kind]}</span><h4>{item.title}</h4><small>{item.versions.length} version{item.versions.length === 1 ? '' : 's'} · {item.reviewedAt ? 'Reviewed' : 'Needs review'}</small></div><pre>{version?.content}</pre><div className="idea-actions"><Button size="sm" variant="outline" onClick={() => loadArtifact(item)}>Edit / new version</Button><Button size="sm" variant="ghost" onClick={() => copy(version?.content || '')}><Copy size={14} /> Copy</Button><Button size="sm" variant="ghost" onClick={() => download(item.title, version?.content || '')}><Download size={14} /> Markdown</Button>{!item.reviewedAt && <Button size="sm" onClick={() => act('review_artifact', { endeavorId: selected.id, artifactId: item.id })}><Check size={14} /> Mark reviewed</Button>}</div></article>; })}
+          <div className="work-section"><h3>Artifacts</h3><p className="small muted">Drafting never means sent, published, or deployed. Every edit creates a version.</p>{selected.artifacts.map((item) => { const version = activeArtifact(item); const evidence = (item.sourceEvidence || []).filter((url) => /^https?:\/\//i.test(url)); return <article className="artifact-card" key={item.id}><div><span className="idea-kind">{artifactLabels[item.kind]}</span><h4>{item.title}</h4><small>{item.versions.length} version{item.versions.length === 1 ? '' : 's'} · {item.reviewedAt ? 'Reviewed' : 'Needs review'}</small></div><pre>{version?.content}</pre>{evidence.length > 0 && <div className="artifact-evidence"><strong>Provider source links</strong><div>{evidence.map((url) => <a key={url} href={url} target="_blank" rel="noreferrer">{url}<ExternalLink size={12} /></a>)}</div></div>}<div className="idea-actions"><Button size="sm" variant="outline" onClick={() => loadArtifact(item)}>Edit / new version</Button><Button size="sm" variant="ghost" onClick={() => copy(version?.content || '')}><Copy size={14} /> Copy</Button><Button size="sm" variant="ghost" onClick={() => download(item.title, version?.content || '')}><Download size={14} /> Markdown</Button>{!item.reviewedAt && <Button size="sm" onClick={() => act('review_artifact', { endeavorId: selected.id, artifactId: item.id })}><Check size={14} /> Mark reviewed</Button>}</div></article>; })}
             <div className="artifact-editor"><select value={artifactKind} onChange={(event) => setArtifactKind(event.target.value as ArtifactKind)}>{Object.entries(artifactLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><Input value={artifactTitle} onChange={(event) => setArtifactTitle(event.target.value)} placeholder="Artifact title" /><Textarea value={artifactContent} onChange={(event) => setArtifactContent(event.target.value)} placeholder="Write or paste a manual draft" /><Input value={artifactInstruction} onChange={(event) => setArtifactInstruction(event.target.value)} placeholder="Optional instructions for an AI draft" /><div className="idea-actions"><Button variant="outline" disabled={busy || !artifactTitle.trim() || !artifactContent.trim()} onClick={saveDraft}>Save manual version</Button><Button disabled={busy || !aiReady || !artifactTitle.trim()} onClick={generate}>Generate draft</Button>{artifact && <Button variant="ghost" onClick={clearArtifact}>Cancel edit</Button>}</div></div>
           </div>
 

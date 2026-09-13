@@ -58,9 +58,14 @@ const assistant = addExploreMessage(business, {
       outcome: 'Consistent qualified visits',
     },
   ],
+  recommendedSuggestionIndex: 0,
+  recommendationReason: 'It is owner-controlled.',
+  nextQuestion: 'How much time is available this week?',
 });
 assert.equal(owner.role, 'owner');
 assert.equal(assistant.suggestions.length, 1);
+assert.equal(assistant.recommendedSuggestionIndex, 0);
+assert.match(assistant.nextQuestion, /time/);
 assert.equal(business.explore.messages.length, 2);
 assert.throws(() => updateIdea(business, 'missing', base), /not found/);
 

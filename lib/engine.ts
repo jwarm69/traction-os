@@ -194,6 +194,9 @@ export type ExploreMessage = {
   createdAt: string;
   ideaId?: string;
   suggestions?: ExploreSuggestion[];
+  recommendedSuggestionIndex?: number;
+  recommendationReason?: string;
+  nextQuestion?: string;
 };
 export type ExploreState = {
   ideas: MarketingIdea[];
@@ -227,6 +230,20 @@ export type WorkArtifact = {
   reviewedAt?: string;
   createdAt: string;
   updatedAt: string;
+  sourceEvidence?: string[];
+};
+export type ExecutionRun = {
+  id: string;
+  status: 'running' | 'succeeded' | 'failed';
+  startedAt: string;
+  leaseExpiresAt: string;
+  contextRevision: number;
+  contextSnapshot?: string;
+  finishedAt?: string;
+  instruction: string;
+  artifactId?: string;
+  error?: string;
+  nextDecision?: string;
 };
 export type ResearchCandidate = {
   id: string;
@@ -266,6 +283,7 @@ export type Endeavor = {
   artifacts: WorkArtifact[];
   research: ResearchCandidate[];
   observations: WorkObservation[];
+  executionRuns?: ExecutionRun[];
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
@@ -274,6 +292,18 @@ export type PortfolioState = {
   priority: 'now' | 'next' | 'maintain' | 'paused';
   ownerHours: number | null;
   note: string;
+  updatedAt: string;
+};
+export type MarketStatus = 'traction' | 'validating' | 'planned' | 'paused';
+export type Market = {
+  id: string;
+  name: string;
+  code: string;
+  location: string;
+  status: MarketStatus;
+  objective: string;
+  evidence: string;
+  nextMove: string;
   updatedAt: string;
 };
 export type WorkState = { endeavors: Endeavor[] };
@@ -293,6 +323,8 @@ export type BusinessDocument = {
   explore?: ExploreState;
   work?: WorkState;
   portfolio?: PortfolioState;
+  marketLabel?: string;
+  markets?: Market[];
   facts: Fact[];
   signals: Signal[];
   diagnosis?: Diagnosis;
@@ -308,6 +340,37 @@ export function addLog(business: BusinessDocument, text: string) {
   const at = iso();
   business.log.unshift({ text, at });
   business.updatedAt = at;
+}
+export function saveMarket(
+  business: BusinessDocument,
+  input: Omit<Market, 'id' | 'updatedAt'>,
+  marketId?: string,
+) {
+  business.markets ||= [];
+  const now = iso();
+  const existing = marketId
+    ? business.markets.find((market) => market.id === marketId)
+    : undefined;
+  if (marketId && !existing) throw Error('Market not found.');
+  const market: Market = {
+    id: existing?.id || uid('market'),
+    ...input,
+    updatedAt: now,
+  };
+  if (existing) Object.assign(existing, market);
+  else business.markets.push(market);
+  addLog(
+    business,
+    `${business.marketLabel || 'Market'} ${existing ? 'updated' : 'added'}: ${market.name}.`,
+  );
+  return market;
+}
+export function removeMarket(business: BusinessDocument, marketId: string) {
+  const markets = business.markets || [];
+  const index = markets.findIndex((market) => market.id === marketId);
+  if (index < 0) throw Error('Market not found.');
+  const [market] = markets.splice(index, 1);
+  addLog(business, `${business.marketLabel || 'Market'} removed: ${market.name}.`);
 }
 
 const briefKeys: BriefFieldKey[] = [
