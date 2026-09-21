@@ -7,6 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
+    "dev:local": "node scripts/dev-turso.mjs",
     "build": "next build",
     "start": "next start",
     "runner:computer": "./scripts/start-computer-runner.sh",

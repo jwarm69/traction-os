@@ -8,6 +8,7 @@ import {
   addObservation,
   addResearchCandidates,
   defaultWorkBrief,
+  importRunnerResult,
   reviewArtifact,
   reviewResearchCandidate,
   saveArtifact,
@@ -123,4 +124,19 @@ await test('S6 returns observations to Explore and includes work in portfolio/re
   const review = weeklyReview(business);
   assert.match(review.summary, /1 Do work item completed/);
   assert.match(review.summary, /does not itself establish acquisition/);
+});
+
+await test('runner results return to the endeavor once, unreviewed, with the source job', () => {
+  const business = demoBusiness();
+  const idea = createIdea(business, input);
+  const work = selectIdea(business, idea.id, defaultWorkBrief(input));
+  const result = { text: 'Shortlist with sources', sourceJobId: 'job_1' };
+  const artifact = importRunnerResult(business, work.id, 'job_1', result);
+  assert.equal(artifact.kind, 'outreach');
+  assert.equal(artifact.reviewedAt, undefined);
+  assert.deepEqual(artifact.sourceEvidence, ['runner-job:job_1']);
+  assert.equal(activeArtifact(artifact).content, 'Shortlist with sources');
+  assert.equal(importRunnerResult(business, work.id, 'job_1', result), null);
+  assert.equal(importRunnerResult(business, work.id, 'job_2', { text: ' ' }), null);
+  assert.equal(work.artifacts.length, 1);
 });

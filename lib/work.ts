@@ -271,6 +271,43 @@ export function saveArtifact(
   return artifact;
 }
 
+/**
+ * Import a completed runner job's text as an unreviewed artifact version.
+ * Idempotent per job: the job reference in sourceEvidence marks prior imports.
+ */
+export function importRunnerResult(
+  business: BusinessDocument,
+  endeavorId: string,
+  jobId: string,
+  result: unknown,
+) {
+  const endeavor = endeavorFor(business, endeavorId);
+  const reference = `runner-job:${jobId}`;
+  if (endeavor.artifacts.some((item) => item.sourceEvidence?.includes(reference)))
+    return null;
+  const value =
+    result && typeof result === 'object' && 'text' in result
+      ? (result as { text: unknown }).text
+      : result;
+  const content = (typeof value === 'string' ? value : '').trim();
+  if (!content) return null;
+  const kind: ArtifactKind =
+    endeavor.kind === 'research'
+      ? 'research_notes'
+      : endeavor.kind === 'outreach'
+        ? 'outreach'
+        : endeavor.kind === 'product_improvement'
+          ? 'product_brief'
+          : 'content';
+  return saveArtifact(business, endeavorId, {
+    kind,
+    title: `Runner result: ${endeavor.title}`.slice(0, 160),
+    content: content.slice(0, 60_000),
+    source: 'assistant',
+    sourceEvidence: [reference],
+  });
+}
+
 export function reviewArtifact(
   business: BusinessDocument,
   endeavorId: string,

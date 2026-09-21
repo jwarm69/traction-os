@@ -81,6 +81,20 @@ export async function loadLegacy(r: R, u: string) {
     })),
   };
 }
+/** Revision-guarded data update that leaves the owner's user record untouched. */
+export async function updateBusinessData(
+  r: R,
+  u: string,
+  id: string,
+  data: string,
+  previous: number,
+) {
+  const x = await db(r).execute({
+    sql: 'UPDATE business_documents SET data=?,revision=revision+1,updated_at=? WHERE user_id=? AND id=? AND revision=?',
+    args: [data, new Date().toISOString(), u, id, previous],
+  });
+  return x.rowsAffected === 1;
+}
 export async function saveBusiness(
   r: R,
   user: U,
