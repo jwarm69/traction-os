@@ -24,6 +24,8 @@ Job state, approval requests, and final text return to Traction. Approval reques
 
 Computer use is an opt-in local beta powered by [`typesafe-computer-use`](https://github.com/awlevin/typesafe-computer-use), pinned to commit `ccde756a3145cd177e6a7396ddbab48286afaf75`. Install it into a dedicated Python 3.12+ environment, set `TYPESAFE_API_KEY` locally, grant Screen Recording and Accessibility permissions to the runner terminal, and pair with `--enable-computer-use --python /absolute/path/to/python`. Traction auto-allows only scrolling, waiting, and bringing the configured browser forward. Clicks, off-screen control presses, navigation, typing, Escape, and Return each require one-time approval in Traction. Raw and annotated screenshots stay in the job's local workspace and are not uploaded; extracted OCR/accessibility state is sent to TypeSafe to classify the next action. The integration is macOS-only and alpha; purchases, publishing, destructive actions, and authentication flows should be declined unless the preview is unambiguous and expected.
 
+On the owner's configured Mac, `npm run runner:computer` loads the TypeSafe key from the `traction-typesafe-api` macOS Keychain item, prompts for the current Traction pairing code, and starts the production computer-use runner. The key is passed only to the runner process and is never committed or placed in shell history.
+
 ```sh
 uv venv --python 3.12 .venv-computer-use
 uv pip install --python .venv-computer-use/bin/python "git+https://github.com/awlevin/typesafe-computer-use.git@ccde756a3145cd177e6a7396ddbab48286afaf75"

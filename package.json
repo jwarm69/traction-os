@@ -9,6 +9,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "runner:computer": "./scripts/start-computer-runner.sh",
     "lint": "oxlint",
     "format": "oxfmt",
     "seed:bite-club": "node scripts/seed-bite-club.mjs"
