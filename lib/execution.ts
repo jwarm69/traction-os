@@ -91,12 +91,24 @@ export function failExecution(
 }
 
 export function executionPrompt(business: BusinessDocument, endeavor: Endeavor, instruction: string) {
-  return `Execute one bounded internal work run. Return {content,nextDecision}. Create a useful editable artifact, with no claim that anything was sent, published, deployed, purchased, or approved. Cite supporting source URLs beside researched claims. Preserve unknowns for owner review. ${instruction || 'Produce the smallest useful next deliverable.'} Context: ${JSON.stringify({
+  return `Execute one bounded internal work run. Return exactly one JSON object shaped like {"content":"editable draft text","nextDecision":"one concise decision for the owner"}. Both values must be plain strings: content must be at most 18,000 characters and nextDecision at most 1,500 characters. Do not nest sections inside content as an object or array; write the artifact as readable Markdown inside the content string. Create a useful editable artifact, with no claim that anything was sent, published, deployed, purchased, or approved. Cite supporting source URLs beside researched claims. Preserve unknowns for owner review. ${instruction || 'Produce the smallest useful next deliverable.'} Context: ${JSON.stringify({
     business: { name: business.name, url: business.url, goal: business.goal, budget: business.budget, notes: business.notes },
     confirmedFacts: business.facts.filter((fact) => fact.status !== 'unreviewed').slice(0, 12),
     markets: business.markets || [],
     endeavor: { title: endeavor.title, kind: endeavor.kind, description: endeavor.description, deliverables: endeavor.intendedDeliverables, budget: endeavor.effortBudget, completion: endeavor.completionCriteria, recentArtifacts: endeavor.artifacts.slice(-3).map((a) => ({ title: a.title, content: a.versions.at(-1)?.content?.slice(0, 1600) })), recentObservations: endeavor.observations.slice(0, 3) },
   })}`.slice(0, 28000);
+}
+
+/** Keep safe structured provider output as an editable artifact. */
+export function executionText(value: unknown, label: 'content' | 'nextDecision', max: number) {
+  let text = typeof value === 'string' ? value : '';
+  if (!text && value && typeof value === 'object') {
+    try { text = JSON.stringify(value, null, 2); } catch { text = ''; }
+  }
+  text = text.trim();
+  if (!text) throw Error(`AI returned no usable ${label === 'content' ? 'draft' : 'next decision'}.`);
+  if (text.length > max) throw Error(`AI returned a ${label === 'content' ? 'draft' : 'next decision'} that was too long to save safely.`);
+  return text;
 }
 
 export function saveExecutionArtifact(

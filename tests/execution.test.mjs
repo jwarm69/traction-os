@@ -3,7 +3,7 @@ import test from 'node:test';
 import { demoBusiness } from '../lib/engine.ts';
 import { createIdea } from '../lib/explore.ts';
 import { defaultWorkBrief, selectIdea } from '../lib/work.ts';
-import { beginExecution, EXECUTION_LEASE_MS, failExecution, finishExecution } from '../lib/execution.ts';
+import { beginExecution, EXECUTION_LEASE_MS, executionPrompt, executionText, failExecution, finishExecution } from '../lib/execution.ts';
 
 function setup() {
   const business = demoBusiness();
@@ -44,4 +44,18 @@ await test('closed work and late or duplicate results cannot be executed', () =>
   assert.throws(() => finishExecution(business, endeavor.id, run.id, { artifactId: 'late', nextDecision: 'Review' }, new Date(EXECUTION_LEASE_MS + 1)), /lease/);
   assert.equal(run.status, 'failed');
   assert.throws(() => finishExecution(business, endeavor.id, run.id, { artifactId: 'duplicate', nextDecision: 'Review' }), /already settled/);
+});
+
+await test('execution output keeps safe structured drafts and rejects unusable values', () => {
+  assert.equal(executionText({ title: 'Draft', bullets: ['One', 'Two'] }, 'content', 1000), '{\n  "title": "Draft",\n  "bullets": [\n    "One",\n    "Two"\n  ]\n}');
+  assert.equal(executionText(' Review this. ', 'nextDecision', 100), 'Review this.');
+  assert.throws(() => executionText(null, 'content', 100), /no usable draft/);
+  assert.throws(() => executionText('too long', 'content', 3), /too long/);
+});
+
+await test('execution prompt requires bounded plain-string fields', () => {
+  const { business, endeavor } = setup();
+  const prompt = executionPrompt(business, endeavor, 'Create the draft.');
+  assert.match(prompt, /Both values must be plain strings/);
+  assert.match(prompt, /readable Markdown inside the content string/);
 });

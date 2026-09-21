@@ -58,6 +58,7 @@ type Res = {
   error?: string;
   gmail?: { email: string };
   warning?: string;
+  executionFailed?: boolean;
 };
 type Act = (op: string, extra?: Record<string, unknown>) => Promise<boolean>;
 type FormState = Record<string, string>;
@@ -133,6 +134,10 @@ export default function Workspace({ username }: { username: string }) {
         setShowNew(false);
         setTab('explore');
         setForm({});
+      }
+      if (d.executionFailed) {
+        setError(d.warning || 'The draft run failed.');
+        return false;
       }
       setNotice(
         d.warning ||

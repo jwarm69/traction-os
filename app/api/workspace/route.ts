@@ -71,6 +71,7 @@ import { runAI } from '@/lib/ai';
 import {
   beginExecution,
   executionPrompt,
+  executionText,
   failExecution,
   finishExecution,
   saveExecutionArtifact,
@@ -479,8 +480,8 @@ export async function POST(req: Request) {
           throw Error(
             'The run returned no inspectable provider source evidence.',
           );
-        const content = required(answer.content, 20000);
-        const nextDecision = required(answer.nextDecision, 2000);
+        const content = executionText(answer.content, 'content', 20000);
+        const nextDecision = executionText(answer.nextDecision, 'nextDecision', 2000);
         let finalRevision: number | null = null;
         for (
           let attempt = 0;
@@ -554,6 +555,7 @@ export async function POST(req: Request) {
                 revision: saved,
                 runId: run.id,
                 warning: error,
+                executionFailed: true,
               },
               200,
             );
