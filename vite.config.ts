@@ -60,7 +60,8 @@ export default defineConfig(async ({ command }) => {
             ? {
                 vars: {
                   TURSO_DATABASE_URL:
-                    'libsql://traction-memory-jwarm16.aws-us-east-1.turso.io',
+                    process.env.TURSO_DATABASE_URL ||
+                    'libsql://traction-dev-jwarm16.aws-us-east-1.turso.io',
                   TURSO_AUTH_TOKEN: process.env.TRACTION_LOCAL_TURSO_TOKEN,
                   ALLOW_DEV_IDENTITY: 'true',
                 },

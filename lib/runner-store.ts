@@ -502,6 +502,32 @@ export async function decideApproval(
     c.close();
   }
 }
+export async function completedJobTarget(
+  r: Runtime,
+  ownerId: string,
+  jobId: string,
+) {
+  const c = db(r);
+  try {
+    const q = await c.execute({
+      sql: "SELECT business_id,endeavor_id,result_json FROM runner_jobs WHERE id=? AND owner_id=? AND status='completed'",
+      args: [jobId, ownerId],
+    });
+    const row = q.rows[0];
+    if (!row) return null;
+    let result: unknown = null;
+    try {
+      result = JSON.parse(str(row.result_json));
+    } catch {}
+    return {
+      businessId: str(row.business_id),
+      endeavorId: str(row.endeavor_id),
+      result,
+    };
+  } finally {
+    c.close();
+  }
+}
 export async function finishJob(
   r: Runtime,
   ownerId: string,

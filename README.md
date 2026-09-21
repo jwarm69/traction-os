@@ -35,6 +35,8 @@ npm ci
 npm run dev
 ```
 
+For local work, `npm run dev:local` mints a one-day token for the isolated `traction-dev` database (schema only, no owner data) and enables the dev identity header and runner. Put `DEEPSEEK_API_KEY` and `OPENAI_API_KEY` in a gitignored `.env.local` to exercise Do runs. With that server running, `TEST_BASE_URL=http://localhost:3000 node tests/runner-import-api.mjs` checks that a completed runner job returns to its endeavor.
+
 Local and production runs require `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. Founder-funded auto routing uses server-side `DEEPSEEK_API_KEY` and `OPENAI_API_KEY` values; OpenAI remains required for sourced research and strategic planning. Apply the SQL files in `migrations/` in order. To seed an owner, provide `OWNER_USERNAME`, `OWNER_PIN`, and `OWNER_EMAIL` alongside the Turso variables and run `node scripts/seed-owner.mjs`.
 
 To add or refresh the paused Bite Club starter, provide `OWNER_EMAIL` and the Turso variables, then run `npm run seed:bite-club`. The seed is idempotent and keeps UF, FAU, and FSU as independent campus records.

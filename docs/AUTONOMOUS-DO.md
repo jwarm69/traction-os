@@ -13,7 +13,7 @@ Traction OS should understand the business, recommend work, execute through the 
 
 The repository now includes an expiring pairing flow, device revocation, a durable SQL task queue, per-action approval decisions, a local Codex App Server worker, and a Do panel for results. Setup is in [RUNNER.md](./RUNNER.md). Enable only after applying migration 007 and validating the intended deployment. The feature is off by default; no production migration was applied by this implementation pass.
 
-The worker returns text results from an isolated task directory. It does not yet check out repositories, drive desktop/browser apps, auto-publish, or import returned text into business artifacts. Codex authentication remains local, and a signed-in end-to-end model run is still a release check.
+The worker returns text results from an isolated task directory. It does not yet check out repositories, drive desktop/browser apps, or auto-publish. Returned text is imported into the originating endeavor as an unreviewed artifact. Codex authentication remains local, and a signed-in end-to-end model run is still a release check.
 
 ## Continuing connected execution
 

@@ -1,7 +1,8 @@
 import { authenticateRequest } from '@/lib/auth';
-import { loadBusiness } from '@/lib/turso';
+import { loadBusiness, updateBusinessData } from '@/lib/turso';
+import { importRunnerResult } from '@/lib/work';
 import { buildAgentBrief } from '@/lib/agent-brief';
-import { runtime } from '@/lib/runtime';
+import { runtime, type Runtime } from '@/lib/runtime';
 import {
   validateId,
   createPairCode,
@@ -15,11 +16,36 @@ import {
   heartbeat,
   recordEvent,
   finishJob,
+  completedJobTarget,
   decideApproval,
 } from '@/lib/runner-store';
 import type { BusinessDocument } from '@/lib/engine';
 import { planExecution } from '@/lib/execution-policy';
 
+/**
+ * Return a completed job's text to its endeavor as an unreviewed artifact.
+ * The job row stays the source of truth; a failed import never fails the job.
+ */
+async function importCompletedJob(r: Runtime, ownerId: string, jobId: string) {
+  const job = await completedJobTarget(r, ownerId, jobId);
+  if (!job) return;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const saved = await loadBusiness(r, ownerId, job.businessId);
+    if (!saved) return;
+    const business = JSON.parse(saved.data) as BusinessDocument;
+    if (!importRunnerResult(business, job.endeavorId, jobId, job.result)) return;
+    if (
+      await updateBusinessData(
+        r,
+        ownerId,
+        job.businessId,
+        JSON.stringify(business),
+        saved.revision,
+      )
+    )
+      return;
+  }
+}
 const out = (x: unknown, status = 200) =>
   Response.json(x, { status, headers: { 'Cache-Control': 'no-store' } });
 const fail = (e: unknown) =>
@@ -178,6 +204,8 @@ export async function POST(req: Request) {
         x.result ?? x.error ?? null,
         op === 'fail',
       );
+      if (result && op === 'complete')
+        await importCompletedJob(r, dev.ownerId, jobId).catch(() => {});
       return result
         ? out({ ok: true })
         : out({ error: 'Lease is invalid or expired.' }, 409);
