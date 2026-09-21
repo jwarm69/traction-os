@@ -85,6 +85,25 @@
   background: var(--background);
   min-width: 180px;
 }
+.runner-send > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+.runner-send > div:first-child p,
+.runner-send > div:first-child small {
+  margin: 0;
+}
+.runner-override {
+  grid-column: 1/-1;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.runner-override summary {
+  cursor: pointer;
+}
+.runner-override .runner-mode {
+  margin-top: 9px;
+}
 .runner-mode {
   display: flex;
   gap: 6px;

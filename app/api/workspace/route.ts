@@ -78,6 +78,7 @@ import {
 import { budgetStatus } from '@/lib/ai-budget';
 import { authenticateRequest, type AuthUser as User } from '@/lib/auth';
 import { runtime } from '@/lib/runtime';
+import { planExecution } from '@/lib/execution-policy';
 // Allow the bounded provider call and its final persistence to finish.
 export const maxDuration = 180;
 const out = (x: unknown, s = 200) =>
@@ -419,6 +420,13 @@ export async function POST(req: Request) {
       const instruction = txt(x.instruction || '', 3000);
       const initial = JSON.parse(JSON.stringify(b)) as BusinessDocument;
       const target = endeavorFor(initial, endeavorId);
+      const executionPlan = planExecution(target);
+      if (executionPlan.route !== 'in_app')
+        throw Error(
+          executionPlan.route === 'human'
+            ? executionPlan.reason
+            : `This work is routed to ${executionPlan.label}. Use the paired desktop runner.`,
+        );
       const prompt = executionPrompt(initial, target, instruction);
       const run = beginExecution(
         initial,
@@ -448,7 +456,7 @@ export async function POST(req: Request) {
           409,
         );
       try {
-        const search = target.kind === 'research' || target.kind === 'outreach';
+        const search = executionPlan.workload === 'research';
         const answer =
           initial.mode === 'demo'
             ? {
@@ -457,13 +465,10 @@ export async function POST(req: Request) {
                   'Review the draft and decide whether to continue, revise, or test it.',
                 __searchSources: [],
               }
-            : await runAI(
-                runtime(),
-                u.id,
-                txt(x.key || '', 500),
-                prompt,
+            : await runAI(runtime(), u.id, txt(x.key || '', 500), prompt, {
                 search,
-              );
+                workload: executionPlan.workload || 'routine',
+              });
         const sources = Array.isArray(answer.__searchSources)
           ? answer.__searchSources
               .filter((value): value is string => typeof value === 'string')

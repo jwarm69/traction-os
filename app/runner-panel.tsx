@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { BusinessDocument, Endeavor } from '@/lib/engine';
+import { executionCostLabel, planExecution } from '@/lib/execution-policy';
 import './runner-panel.css';
 
 type Device = {
@@ -215,13 +216,16 @@ export default function RunnerPanel({
     (job) => !selected || !job.endeavorId || job.endeavorId === selected.id,
   );
   const activeJob = jobs.find((job) => activeStatuses.has(job.status));
-  const run = async () => {
+  const executionPlan = selected ? planExecution(selected) : undefined;
+  const desktopRecommended =
+    executionPlan?.route === 'codex' || executionPlan?.route === 'computer';
+  const run = async (automatic = true) => {
     if (selected && selectedDevice)
       await post('queue_job', {
         endeavorId: selected.id,
         deviceId: selectedDevice,
         revision,
-        executionMode,
+        executionMode: automatic ? 'auto' : executionMode,
       });
   };
   const approval = async (
@@ -348,8 +352,11 @@ export default function RunnerPanel({
           {selected && (
             <div className="runner-send">
               <div>
-                <strong>Send this endeavor to a device</strong>
-                <p className="small muted">{selected.title}</p>
+                <strong>{executionPlan?.label}</strong>
+                <p className="small muted">{executionPlan?.reason}</p>
+                {executionPlan && (
+                  <small>{executionCostLabel(executionPlan)}</small>
+                )}
               </div>
               <select
                 aria-label="Choose paired device"
@@ -374,47 +381,64 @@ export default function RunnerPanel({
                     </option>
                   ))}
               </select>
-              <fieldset className="runner-mode" aria-label="Execution mode">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={executionMode === 'codex' ? 'default' : 'outline'}
-                  onClick={() => setExecutionMode('codex')}
-                >
-                  Research
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={executionMode === 'computer' ? 'default' : 'outline'}
-                  disabled={
-                    !snapshot?.devices?.find(
-                      (device) => device.id === selectedDevice,
-                    )?.capabilities?.computerUse
-                  }
-                  onClick={() => setExecutionMode('computer')}
-                >
-                  Use computer
-                </Button>
-              </fieldset>
               <Button
                 disabled={
+                  !desktopRecommended ||
                   !selectedDevice ||
                   !!activeJob ||
                   !!busy ||
-                  (executionMode === 'computer' &&
+                  (executionPlan?.route === 'computer' &&
                     !snapshot?.devices?.find(
                       (device) => device.id === selectedDevice,
                     )?.capabilities?.computerUse) ||
                   ['completed', 'stopped', 'blocked'].includes(selected.status)
                 }
-                onClick={run}
+                onClick={() => void run(true)}
               >
                 <Play size={14} />{' '}
-                {executionMode === 'computer'
-                  ? 'Do on this Mac'
-                  : 'Research on desktop'}
+                {executionPlan?.route === 'computer'
+                  ? 'Run with Jev'
+                  : executionPlan?.route === 'codex'
+                    ? 'Run with Codex'
+                    : 'Use in-app route above'}
               </Button>
+              <details className="runner-override">
+                <summary>Manual route override</summary>
+                <fieldset className="runner-mode" aria-label="Execution mode">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={executionMode === 'codex' ? 'default' : 'outline'}
+                    onClick={() => setExecutionMode('codex')}
+                  >
+                    Codex
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={
+                      executionMode === 'computer' ? 'default' : 'outline'
+                    }
+                    disabled={
+                      !snapshot?.devices?.find(
+                        (device) => device.id === selectedDevice,
+                      )?.capabilities?.computerUse
+                    }
+                    onClick={() => setExecutionMode('computer')}
+                  >
+                    Jev
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={!selectedDevice || !!activeJob || !!busy}
+                    onClick={() => void run(false)}
+                  >
+                    Run override
+                  </Button>
+                </fieldset>
+              </details>
             </div>
           )}
           {activeJob && (

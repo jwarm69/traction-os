@@ -8,6 +8,8 @@ The current product has three owner modes. Explore keeps ideas and durable human
 
 AI routing is deterministic: `DEEPSEEK_API_KEY` enables DeepSeek Flash for routine summaries, ideation, and drafting; `OPENAI_API_KEY` remains required for sourced web research and strategic experiment planning. A personal OpenAI key supplied in the session always overrides shared routing and is never persisted.
 
+Do execution uses a server-authoritative control plane before spending or acting. Routine drafts stay in-app on DeepSeek, sourced research and strategic experiments stay in-app on OpenAI, product implementation routes to the paired Codex runner, and external computer actions route to Jev/TypeSafe only after an artifact has been owner-reviewed. Blocked, stopped, and completed work returns to the owner. The interface shows the route, reason, maximum shared API reservation, and approval boundary before a run; any desktop override is explicit.
+
 The paired local Codex and computer-use runner is a gated beta. See [runner setup and limitations](docs/RUNNER.md). It adds device pairing, queued tasks, owner approval requests, and returned results without uploading Codex login credentials or raw screenshots to Traction. `RUNNER_ENABLED` defaults off; migrations 007–008 and a signed-in end-to-end check are required before rollout.
 
 The owner portfolio also supports market-level operating records, so a business can keep campus, city, or segment progress distinct. Bite Club Meal Plan uses this to separate UF evidence from FAU and FSU expansion work while the venture is paused.

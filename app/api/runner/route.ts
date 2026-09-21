@@ -18,6 +18,7 @@ import {
   decideApproval,
 } from '@/lib/runner-store';
 import type { BusinessDocument } from '@/lib/engine';
+import { planExecution } from '@/lib/execution-policy';
 
 const out = (x: unknown, status = 200) =>
   Response.json(x, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -207,8 +208,6 @@ export async function POST(req: Request) {
         endeavorId = validateId(x.endeavorId, 'endeavor id'),
         deviceId = validateId(x.deviceId, 'device id'),
         revision = Number(x.revision);
-      const executionMode =
-        x.executionMode === 'computer' ? 'computer' : 'codex';
       if (!Number.isSafeInteger(revision) || revision < 1)
         throw Error('Invalid revision.');
       const b = await loadBusiness(r, u.id, businessId);
@@ -219,6 +218,21 @@ export async function POST(req: Request) {
       if (!endeavor) throw Error('Endeavor is unavailable.');
       if (['completed', 'stopped', 'blocked'].includes(endeavor.status))
         throw Error('Reopen or unblock this endeavor before sending work.');
+      const plan = planExecution(endeavor);
+      const executionMode =
+        x.executionMode === 'auto'
+          ? plan.route === 'computer' || plan.route === 'codex'
+            ? plan.route
+            : (() => {
+                throw Error(
+                  plan.route === 'in_app'
+                    ? `The controlled route is ${plan.label}. Use Do this instead of the desktop runner.`
+                    : plan.reason,
+                );
+              })()
+          : x.executionMode === 'computer'
+            ? 'computer'
+            : 'codex';
       const brief = buildAgentBrief(business, endeavor);
       if (brief.length > 50_000) throw Error('Brief is too large.');
       const goal =
