@@ -6,20 +6,21 @@ import {
   BarChart3,
   Building2,
   Check,
+  ChevronDown,
   ChevronRight,
   Database,
   FlaskConical,
   KeyRound,
   Mail,
-  Plus,
   RefreshCw,
   Send,
+  Settings,
   Target,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent } from '@/components/ui/tabs';
 import type { BusinessDocument, Fact } from '@/lib/engine';
 import { ownerQueue } from '@/lib/owner-queue';
 import GuidedWorkspace from './guided-workspace';
@@ -27,6 +28,7 @@ import ExploreWorkspace from './explore-workspace';
 import DoWorkspace from './do-workspace';
 import PortfolioWorkspace from './portfolio-workspace';
 import MarketsWorkspace from './markets-workspace';
+import CommandCenter from './command-center';
 type Summary = {
   id: string;
   name: string;
@@ -69,7 +71,7 @@ export default function Workspace({ username }: { username: string }) {
     [revision, setRevision] = useState(0),
     [busy, setBusy] = useState(''),
     [error, setError] = useState(''),
-    [tab, setTab] = useState('explore'),
+    [tab, setTab] = useState('command'),
     [key, setKey] = useState(''),
     [gmailToken, setGmail] = useState(''),
     [ga4Token, setGa4] = useState(''),
@@ -164,7 +166,7 @@ export default function Workspace({ username }: { username: string }) {
       setShowNew(false);
       setError('');
       setNotice('');
-      setTab('explore');
+      setTab('command');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not switch businesses.');
     } finally {
@@ -173,94 +175,78 @@ export default function Workspace({ username }: { username: string }) {
     }
   }
   const queue = b ? ownerQueue(b) : [];
+  const primaryTab = ['command', 'explore', 'do'].includes(tab)
+    ? tab
+    : 'records';
+  const records = [
+    ['portfolio', 'Portfolio'],
+    ['markets', b?.marketLabel === 'Campus' ? 'Campuses' : 'Markets'],
+    ['today', 'Guided plan'],
+    ['memory', 'Business context'],
+    ['rounds', 'Growth plan'],
+    ['signals', 'Results'],
+    ['outreach', 'Prospects & messages'],
+    ['reviews', 'Weekly review'],
+    ['connections', 'Connections & budget'],
+  ];
   return (
     <div className="owner-shell">
-      <header className="topbar">
-        <div className="brand">
-          <span className="brand-mark">
-            <Activity size={20} />
-          </span>
-          Traction OS
-        </div>
-        <div className="top-actions">
-          <span className="private">{username}</span>
-          <span className="private">
-            {aiBudget?.enabled
-              ? `Shared AI: $${aiBudget.remaining.toFixed(2)} available`
-              : 'Saved to your account'}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setShowNew(false);
-              setTab('connections');
-            }}
-          >
-            <KeyRound size={15} /> Connections
-          </Button>
-          <form action="/api/auth/logout" method="post">
-            <Button type="submit" variant="ghost" size="sm">
-              Sign out
-            </Button>
-          </form>
-        </div>
-      </header>
-      <div className="owner-layout">
-        <aside className="business-nav">
-          <label className="mobile-business-label" htmlFor="business-picker">
-            Business
-          </label>
-          <select
-            id="business-picker"
-            className="mobile-business-picker"
-            value={b?.id || ''}
-            disabled={!!busy}
-            onChange={(e) => select(e.target.value)}
-          >
-            {!b && <option value="">Choose a business</option>}
-            {businesses.map((x) => (
-              <option key={x.id} value={x.id}>
-                {x.name}
-              </option>
-            ))}
-          </select>
-          <p className="eyebrow">BUSINESSES</p>
-          {businesses.map((x) => (
+      <header className="app-header">
+        <button className="brand" type="button" onClick={() => setTab('command')}>
+          <span className="brand-mark"><Activity size={21} /></span>
+          <span>Traction<br className="brand-break" /> OS</span>
+        </button>
+        <nav className="primary-nav" aria-label="Primary navigation">
+          {[
+            ['command', 'Command Center'],
+            ['explore', 'Explore'],
+            ['do', 'Do'],
+          ].map(([value, label]) => (
             <button
-              className={`business-item ${b?.id === x.id ? 'active' : ''}`}
-              key={x.id}
-              onClick={() => select(x.id)}
+              key={value}
+              type="button"
+              aria-current={primaryTab === value ? 'page' : undefined}
+              onClick={() => {
+                setShowNew(false);
+                setTab(value);
+              }}
             >
-              <Building2 size={16} />
-              <span>
-                {x.name}
-                <small>
-                  {x.mode === 'demo'
-                    ? 'Fictional demo'
-                    : new URL(x.url).hostname}
-                </small>
-              </span>
+              {label}
             </button>
           ))}
-          <Button
-            variant="outline"
-            disabled={!!busy}
+        </nav>
+        <div className="app-header-actions">
+          <button
+            type="button"
+            className={primaryTab === 'records' ? 'active' : ''}
             onClick={() => {
-              setShowNew(true);
-              setTab('explore');
+              setShowNew(false);
+              setTab(b ? 'memory' : 'connections');
             }}
           >
-            <Plus size={15} /> Add business
-          </Button>
-          <div className="nav-note">
-            <Database size={15} />
-            <span>
-              Each business keeps its own evidence, rounds, and history.
-            </span>
-          </div>
-        </aside>
-        <main className="owner-main">
+            <Settings size={20} /> <span>Settings</span>
+          </button>
+          <details className="account-menu">
+            <summary>
+              <span className="account-avatar">{username.slice(0, 1).toUpperCase()}</span>
+              <span>Account</span>
+              <ChevronDown size={17} />
+            </summary>
+            <div>
+              <strong>{username}</strong>
+              <small>
+                {aiBudget?.enabled
+                  ? `$${aiBudget.remaining.toFixed(2)} shared AI available`
+                  : 'Saved to your account'}
+              </small>
+              <form action="/api/auth/logout" method="post">
+                <Button type="submit" variant="outline">Sign out</Button>
+              </form>
+            </div>
+          </details>
+        </div>
+      </header>
+      <main className={`owner-main ${primaryTab === 'command' ? 'command-main' : ''}`}>
           {aiBudget?.enabled && tab === 'connections' && (
             <p className="small muted" style={{ marginBottom: 16 }}>
               Founder-funded AI · ${aiBudget.used.toFixed(2)} of $
@@ -319,72 +305,65 @@ export default function Workspace({ username }: { username: string }) {
             />
           ) : (
             <>
-              <div
-                className={`workspace-heading ${tab === 'today' ? 'compact-heading' : ''}`}
-              >
-                <div>
-                  <p className="eyebrow">
-                    OWNER WORKSPACE /{' '}
-                    {b.mode === 'demo' ? 'FICTIONAL DEMO' : 'LIVE BUSINESS'}
-                  </p>
-                  <h1>{b.name}</h1>
-                  <p className="muted">
-                    {b.goal || 'Set a goal to focus the next round.'}
-                  </p>
-                </div>
-                <div className="queue-count">
-                  <strong>{queue.length}</strong>
-                  <span>open actions</span>
-                </div>
-              </div>
-              {b.mode === 'demo' && (
+              {b.mode === 'demo' && tab !== 'command' && (
                 <div className="demo-banner">
                   <FlaskConical size={16} />
                   All facts, signals, prospects, drafts, and outcomes here are
                   fictional.
                 </div>
               )}
-              <Tabs value={tab} onValueChange={(v) => setTab(String(v))}>
-                <TabsList
-                  className={`owner-tabs ${tab === 'today' ? 'compact-tabs' : ''}`}
-                  variant="line"
-                >
-                  {[
-                    ['explore', 'Explore'],
-                    ['do', 'Do'],
-                    ['portfolio', 'Portfolio'],
-                    [
-                      'markets',
-                      b.marketLabel === 'Campus' ? 'Campuses' : 'Markets',
-                    ],
-                    ['today', 'Next move'],
-                    ['memory', 'Business context'],
-                    ['rounds', 'Growth plan'],
-                    ['signals', 'Results'],
-                  ].map((x) => (
-                    <TabsTrigger key={x[0]} value={x[0]}>
-                      {x[1]}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-                {tab !== 'today' && (
-                  <div className="secondary-tools">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setTab('outreach')}
-                    >
-                      Prospects & messages
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setTab('reviews')}
-                    >
-                      Weekly review
-                    </Button>
+              {primaryTab === 'records' && (
+                <section className="records-header">
+                  <div>
+                    <p className="eyebrow">BUSINESS RECORDS / {b.name}</p>
+                    <h1>Evidence, plans, and settings</h1>
+                    <p>Inspect the details behind recommendations without crowding the daily command view.</p>
                   </div>
-                )}
+                  <label htmlFor="records-business-picker">
+                    Current business
+                    <select
+                      id="records-business-picker"
+                      value={b.id}
+                      disabled={!!busy}
+                      onChange={(event) => void select(event.target.value)}
+                    >
+                      {businesses.map((item) => (
+                        <option key={item.id} value={item.id}>{item.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <nav className="records-nav" aria-label="Business records">
+                    {records.map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        className={tab === value ? 'active' : ''}
+                        onClick={() => setTab(value)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </nav>
+                </section>
+              )}
+              <Tabs value={tab}>
+                <TabsContent value="command">
+                  <CommandCenter
+                    business={b}
+                    businesses={businesses}
+                    queue={queue}
+                    aiBudget={aiBudget}
+                    aiReady={b.mode === 'demo' || !!key || !!aiBudget?.enabled}
+                    busy={!!busy}
+                    act={act}
+                    openTab={setTab}
+                    selectBusiness={(id) => void select(id)}
+                    addBusiness={() => {
+                      setShowNew(true);
+                      setTab('explore');
+                    }}
+                  />
+                </TabsContent>
                 <TabsContent value="explore">
                   <ExploreWorkspace
                     key={b.id}
@@ -484,8 +463,7 @@ export default function Workspace({ username }: { username: string }) {
               </Tabs>
             </>
           )}
-        </main>
-      </div>
+      </main>
     </div>
   );
 }
