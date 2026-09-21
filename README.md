@@ -6,15 +6,17 @@ See [ROADMAP.md](ROADMAP.md) for the short- and long-term product milestones, re
 
 The current product has three owner modes. Explore keeps ideas and durable human/AI discussion. Do freezes a selected direction, produces versioned artifacts, keeps sourced research inspectable, and records external observations without confusing drafts with outcomes. Portfolio shows priority, owner-time commitment, active/blocked work, and latest learning across businesses.
 
-The paired local Codex runner is a gated beta. See [runner setup and limitations](docs/RUNNER.md). It adds device pairing, queued tasks, owner approval requests, and returned text without uploading Codex login credentials. `RUNNER_ENABLED` defaults off; migration 007 and a signed-in end-to-end check are required before rollout.
+AI routing is deterministic: `DEEPSEEK_API_KEY` enables DeepSeek Flash for routine summaries, ideation, and drafting; `OPENAI_API_KEY` remains required for sourced web research and strategic experiment planning. A personal OpenAI key supplied in the session always overrides shared routing and is never persisted.
+
+The paired local Codex and computer-use runner is a gated beta. See [runner setup and limitations](docs/RUNNER.md). It adds device pairing, queued tasks, owner approval requests, and returned results without uploading Codex login credentials or raw screenshots to Traction. `RUNNER_ENABLED` defaults off; migrations 007–008 and a signed-in end-to-end check are required before rollout.
 
 The owner portfolio also supports market-level operating records, so a business can keep campus, city, or segment progress distinct. Bite Club Meal Plan uses this to separate UF evidence from FAU and FSU expansion work while the venture is paused.
 
 ## Public beta and shared AI
 
-Anyone can visit the public URL. People register a unique username with a 4–6 digit PIN to use private, per-account business records. PINs are PBKDF2 hashed with a random per-account salt. Login sessions use hashed opaque tokens in secure HTTP-only cookies, and failed login attempts are throttled per username. The server-held `OPENAI_API_KEY` funds shared AI; it is never returned to the browser. Existing personal Google connections remain session-only.
+Anyone can visit the public URL. People register a unique username with a 4–6 digit PIN to use private, per-account business records. PINs are PBKDF2 hashed with a random per-account salt. Login sessions use hashed opaque tokens in secure HTTP-only cookies, and failed login attempts are throttled per username. Server-held AI keys fund shared routing and are never returned to the browser. Existing personal Google connections remain session-only.
 
-The `public-beta` ledger in Turso starts with a cumulative $5 ceiling, aligned to the current provider-key balance. Each request atomically reserves a conservative maximum before contacting OpenAI. This covers concurrent requests across users. Text calls reserve $0.125; web research reserves $1.25 for up to two search calls. Completed usage is settled at uncached published token rates plus both possible search fees and a 10% cushion. Missing/uncertain usage keeps the full reservation. The app may pause before exactly $5; saved work stays available. There is no automatic refill or budget reset. This ledger does not limit other applications using the same key or non-OpenAI services.
+The `public-beta` ledger in Turso starts with a cumulative $5 ceiling. Each shared request atomically reserves a conservative maximum before contacting a provider. DeepSeek routine calls reserve $0.025, OpenAI text calls reserve $0.125, and OpenAI web research reserves $1.25 for up to two search calls. Completed usage is settled at peak uncached token rates, applicable search fees, and a 10% cushion; off-peak and cache discounts are therefore treated as extra safety margin. Missing or uncertain usage keeps the full reservation. Saved work remains available when the shared pool pauses. There is no automatic refill or reset, and the ledger cannot limit other applications using the same provider keys.
 
 Pricing verified September 9, 2026: [GPT-5.4 mini](https://developers.openai.com/api/docs/models/gpt-5.4-mini), [search pricing](https://developers.openai.com/api/docs/pricing). The model is pinned to `gpt-5.4-mini-2026-03-17`, standard service tier, 3,500 output tokens, two maximum tool calls, and bounded prompts. Review these assumptions before changing the model or pricing. An operator can top up by increasing the existing ledger ceiling; never delete spend records to refill it.
 
@@ -31,7 +33,7 @@ npm ci
 npm run dev
 ```
 
-Local and production runs require `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. Founder-funded AI also requires a server-side `OPENAI_API_KEY`. Apply the SQL files in `migrations/` in order. To seed an owner, provide `OWNER_USERNAME`, `OWNER_PIN`, and `OWNER_EMAIL` alongside the Turso variables and run `node scripts/seed-owner.mjs`.
+Local and production runs require `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. Founder-funded auto routing uses server-side `DEEPSEEK_API_KEY` and `OPENAI_API_KEY` values; OpenAI remains required for sourced research and strategic planning. Apply the SQL files in `migrations/` in order. To seed an owner, provide `OWNER_USERNAME`, `OWNER_PIN`, and `OWNER_EMAIL` alongside the Turso variables and run `node scripts/seed-owner.mjs`.
 
 To add or refresh the paused Bite Club starter, provide `OWNER_EMAIL` and the Turso variables, then run `npm run seed:bite-club`. The seed is idempotent and keeps UF, FAU, and FSU as independent campus records.
 

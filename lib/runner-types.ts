@@ -4,7 +4,9 @@ export type RunnerDevice = {
   createdAt: string;
   revokedAt: string | null;
   lastSeenAt: string | null;
+  capabilities: { computerUse?: boolean };
 };
+export type RunnerExecutionMode = 'codex' | 'computer';
 export type RunnerJobStatus =
   | 'queued'
   | 'claimed'
@@ -17,6 +19,8 @@ export type RunnerJob = {
   endeavorId: string;
   deviceId: string;
   revision: number;
+  executionMode: RunnerExecutionMode;
+  goal?: string;
   status: RunnerJobStatus;
   brief?: string;
   result?: unknown;
@@ -39,4 +43,9 @@ export type RunnerDecision = {
   details: unknown;
   decision: 'approved' | 'denied' | null;
 };
-export type RunnerClaim = { job: RunnerJob; leaseToken: string; brief: string };
+export type RunnerClaim = {
+  job: RunnerJob;
+  leaseToken: string;
+  brief: string;
+  goal?: string;
+};

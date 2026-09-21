@@ -3,7 +3,9 @@ export type BudgetRuntime = {
   TURSO_DATABASE_URL?: string;
   TURSO_AUTH_TOKEN?: string;
   OPENAI_API_KEY?: string;
+  DEEPSEEK_API_KEY?: string;
 };
+export type AIProvider = 'openai' | 'deepseek';
 const db = (r: BudgetRuntime) => {
   if (!r.TURSO_DATABASE_URL || !r.TURSO_AUTH_TOKEN)
     throw Error('AI budget storage is unavailable. No request was sent.');
@@ -17,10 +19,12 @@ export const AI_MODEL = 'gpt-5.4-mini-2026-03-17';
 // plain request; search allows <=2 tool calls and <=3 400k context passes.
 // Verified 2026-09-09: $0.75/M input, $4.50/M output, $0.01/search.
 // Output is capped at 3500 tokens. A cushion is retained in settled estimates.
-export const reservationMicros = (search: boolean) =>
-  search ? 1250000 : 125000;
+export const reservationMicros = (
+  search: boolean,
+  provider: AIProvider = 'openai',
+) => (provider === 'deepseek' ? 25000 : search ? 1250000 : 125000);
 export async function budgetStatus(r: BudgetRuntime, pool = 'public-beta') {
-  if (!r.OPENAI_API_KEY)
+  if (!r.OPENAI_API_KEY && !r.DEEPSEEK_API_KEY)
     return { enabled: false, limit: 5, used: 0, remaining: 0, held: 0 };
   const c = db(r);
   try {
@@ -48,10 +52,11 @@ export async function reserveAI(
   userId: string,
   search: boolean,
   pool = 'public-beta',
+  provider: AIProvider = 'openai',
 ) {
   const c = db(r),
     id = crypto.randomUUID(),
-    amount = reservationMicros(search),
+    amount = reservationMicros(search, provider),
     now = new Date().toISOString(),
     minute = new Date(Date.now() - 60000).toISOString(),
     active = new Date(Date.now() - 180000).toISOString();
@@ -88,6 +93,7 @@ export async function reserveAI(
 export function usageMicros(
   response: Record<string, unknown>,
   search: boolean,
+  provider: AIProvider = 'openai',
 ): { amount: number; input: number; output: number } | null {
   const u = response.usage as
     | { input_tokens?: unknown; output_tokens?: unknown }
@@ -101,10 +107,18 @@ export function usageMicros(
   const input = Number(u.input_tokens),
     output = Number(u.output_tokens);
   if (input < 0 || output < 0) return null;
-  // Ignore cache discounts, reserve both allowed searches, and add a 10% cushion.
+  // Ignore cache discounts and off-peak rates so the shared ledger remains conservative.
+  // Integer math avoids floating-point drift in the micro-dollar ledger. Rates
+  // are stored as hundredths of a micro-dollar per token, then receive 10%.
+  const inputRateHundredths = provider === 'deepseek' ? 30 : 75;
+  const outputRateHundredths = provider === 'deepseek' ? 120 : 450;
   return {
     amount: Math.ceil(
-      (input * 0.75 + output * 4.5 + (search ? 20000 : 0)) * 1.1,
+      ((input * inputRateHundredths +
+        output * outputRateHundredths +
+        (search ? 2_000_000 : 0)) *
+        11) /
+        1000,
     ),
     input,
     output,
@@ -115,9 +129,10 @@ export async function settleAI(
   reservation: { id: string; amount: number },
   response: Record<string, unknown> | null,
   search: boolean,
+  provider: AIProvider = 'openai',
 ) {
   const c = db(r),
-    usage = response ? usageMicros(response, search) : null;
+    usage = response ? usageMicros(response, search, provider) : null;
   try {
     if (!usage || usage.amount > reservation.amount) {
       await c.execute({

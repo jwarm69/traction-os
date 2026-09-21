@@ -167,7 +167,8 @@ export class CodexProcess {
       settle = (error, value) => {
         if (this.closed) return;
         this.closed = true;
-        error ? reject(error) : resolve(value);
+        if (error) reject(error);
+        else resolve(value);
       };
     });
     done.catch(() => {});
@@ -219,7 +220,7 @@ export class CodexProcess {
       assertSafeConfig(config?.config);
       const thread = await rpc.request('thread/start', {
         cwd: this.workspace,
-        approvalPolicy: 'untrusted',
+        approvalPolicy: 'on-request',
         approvalsReviewer: 'user',
         sandbox: 'read-only',
         ...(this.model ? { model: this.model } : {}),
@@ -233,7 +234,7 @@ export class CodexProcess {
         threadId: this.threadId,
         cwd: this.workspace,
         input: [{ type: 'text', text: brief }],
-        approvalPolicy: 'untrusted',
+        approvalPolicy: 'on-request',
         sandboxPolicy: { type: 'readOnly' },
       });
       if (started?.turn?.id) this.turnId = started.turn.id;
@@ -349,6 +350,170 @@ export class CodexProcess {
     }
   }
 }
+
+const COMPUTER_PREFIX = 'TRACTION_JSON:';
+export class ComputerUseProcess {
+  constructor({
+    python = 'python3',
+    bridge,
+    workspace,
+    http,
+    jobId,
+    leaseToken,
+    maxRuntimeMs = 10 * 60_000,
+    spawnImpl = spawn,
+    approvalPollMs = 1000,
+  } = {}) {
+    Object.assign(this, {
+      python,
+      bridge,
+      workspace,
+      http,
+      jobId,
+      leaseToken,
+      maxRuntimeMs,
+      spawnImpl,
+      approvalPollMs,
+    });
+  }
+  async approval(requestId, details, signal) {
+    await this.http.post('/api/runner', {
+      op: 'event',
+      jobId: this.jobId,
+      leaseToken: this.leaseToken,
+      requestId,
+      method: 'computer/action/requestApproval',
+      details,
+    });
+    while (!signal.aborted) {
+      const beat = await this.http.post('/api/runner', {
+        op: 'heartbeat',
+        jobId: this.jobId,
+        leaseToken: this.leaseToken,
+      });
+      if (beat?.cancel) throw new Error('Task was canceled.');
+      const decision = beat?.decisions?.find(
+        (item) =>
+          item.requestId === requestId &&
+          item.method === 'computer/action/requestApproval',
+      )?.decision;
+      if (decision === 'approved' || decision === 'denied') return decision;
+      await delay(this.approvalPollMs, undefined, { signal });
+    }
+    return 'denied';
+  }
+  async run(goal, { signal } = {}) {
+    if (typeof goal !== 'string' || !goal.trim() || goal.length > 1000)
+      throw new Error('Invalid computer-use goal.');
+    if (!process.env.TYPESAFE_API_KEY)
+      throw new Error('Set TYPESAFE_API_KEY in the local runner environment.');
+    await fs.mkdir(this.workspace, { recursive: true, mode: 0o700 });
+    const controller = new AbortController();
+    const stopFromParent = () => controller.abort();
+    signal?.addEventListener('abort', stopFromParent, { once: true });
+    const env = {};
+    for (const key of [
+      'PATH',
+      'HOME',
+      'LANG',
+      'LC_ALL',
+      'TMPDIR',
+      'USER',
+      'TYPESAFE_API_KEY',
+      'ANTHROPIC_API_KEY',
+      'CLICKER_BROWSER',
+      'CLICKER_EMAIL',
+      'CLICKER_WRITER_MODEL',
+    ])
+      if (process.env[key]) env[key] = process.env[key];
+    const child = this.spawnImpl(
+      this.python,
+      [
+        this.bridge,
+        '--out',
+        path.join(this.workspace, 'computer-use'),
+        '--steps',
+        '8',
+        '--min-confidence',
+        '0.5',
+      ],
+      {
+        cwd: this.workspace,
+        env,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      },
+    );
+    let buffer = '',
+      ready = false,
+      complete,
+      stderr = '';
+    const result = new Promise((resolve, reject) => {
+      const fail = (error) =>
+        reject(error instanceof Error ? error : new Error(String(error)));
+      child.on('error', fail);
+      child.on('exit', (code, sig) => {
+        if (!complete)
+          fail(
+            new Error(
+              stderr.trim() || `Computer-use bridge exited (${code ?? sig}).`,
+            ),
+          );
+      });
+      child.stderr.on('data', (chunk) => {
+        stderr = (stderr + chunk).slice(-4000);
+      });
+      child.stdout.on('data', (chunk) => {
+        buffer += chunk.toString('utf8');
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith(COMPUTER_PREFIX)) continue;
+          let event;
+          try {
+            event = JSON.parse(line.slice(COMPUTER_PREFIX.length));
+          } catch {
+            fail(new Error('Computer-use bridge returned invalid JSON.'));
+            continue;
+          }
+          if (event.type === 'ready' && !ready) {
+            ready = true;
+            child.stdin.write(`${JSON.stringify({ goal })}\n`);
+          } else if (event.type === 'approval') {
+            this.approval(event.id, event.action, controller.signal)
+              .then((decision) =>
+                child.stdin.write(
+                  `${JSON.stringify({ id: event.id, decision })}\n`,
+                ),
+              )
+              .catch(fail);
+          } else if (event.type === 'complete') {
+            complete = event;
+            resolve({
+              outcome: event.outcome,
+              actions: event.history,
+              sourceJobId: this.jobId,
+            });
+          }
+        }
+      });
+    });
+    const stop = () => {
+      controller.abort();
+      child.kill('SIGTERM');
+    };
+    const timer = setTimeout(stop, Math.min(this.maxRuntimeMs, 10 * 60_000));
+    controller.signal.addEventListener('abort', () => child.kill('SIGTERM'), {
+      once: true,
+    });
+    try {
+      return await result;
+    } finally {
+      clearTimeout(timer);
+      stop();
+      signal?.removeEventListener('abort', stopFromParent);
+    }
+  }
+}
 export class TractionRunner {
   constructor({
     baseUrl,
@@ -361,6 +526,10 @@ export class TractionRunner {
     maxRuntimeMs,
     http,
     processFactory,
+    computerProcessFactory,
+    computerUse = false,
+    computerBridge,
+    python,
   } = {}) {
     this.http = http || new RunnerHttp(baseUrl, token, { allowLocalHttp });
     this.deviceId = deviceId;
@@ -370,6 +539,11 @@ export class TractionRunner {
     this.maxRuntimeMs = maxRuntimeMs;
     this.processFactory =
       processFactory || ((options) => new CodexProcess(options));
+    this.computerUse = computerUse;
+    this.computerBridge = computerBridge;
+    this.python = python;
+    this.computerProcessFactory =
+      computerProcessFactory || ((options) => new ComputerUseProcess(options));
     this.abort = new AbortController();
   }
   stop() {
@@ -386,13 +560,21 @@ export class TractionRunner {
     )
       throw new Error('Invalid claimed job.');
     const workspace = path.join(this.root, `${job.id}-${crypto.randomUUID()}`);
-    const process = this.processFactory({
+    if (job.executionMode === 'computer' && !this.computerUse)
+      throw new Error('Computer use is not enabled on this runner.');
+    const factory =
+      job.executionMode === 'computer'
+        ? this.computerProcessFactory
+        : this.processFactory;
+    const process = factory({
       workspace,
       codexHome: this.codexHome,
       http: this.http,
       jobId: job.id,
       leaseToken,
       maxRuntimeMs: this.maxRuntimeMs,
+      bridge: this.computerBridge,
+      python: this.python,
     });
     let beatPending = false;
     const heartbeat = setInterval(async () => {
@@ -412,7 +594,11 @@ export class TractionRunner {
       }
     }, 20_000);
     try {
-      const result = await process.run(claim.brief || job.brief, {
+      const input =
+        job.executionMode === 'computer'
+          ? claim.goal || job.goal
+          : claim.brief || job.brief;
+      const result = await process.run(input, {
         signal: this.abort.signal,
       });
       if (this.abort.signal.aborted)

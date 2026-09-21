@@ -107,7 +107,9 @@ export async function POST(req: Request) {
   const op = typeof x.op === 'string' ? x.op : '';
   try {
     if (op === 'pair') {
-      const p = await redeemPairCode(r, x.code, x.deviceName);
+      const p = await redeemPairCode(r, x.code, x.deviceName, {
+        computerUse: x.computerUse === true,
+      });
       return out(p, 201);
     }
     const deviceOperation = [
@@ -143,6 +145,7 @@ export async function POST(req: Request) {
           ![
             'item/commandExecution/requestApproval',
             'item/fileChange/requestApproval',
+            'computer/action/requestApproval',
           ].includes(method)
         )
           throw Error('Unsupported approval request.');
@@ -204,6 +207,8 @@ export async function POST(req: Request) {
         endeavorId = validateId(x.endeavorId, 'endeavor id'),
         deviceId = validateId(x.deviceId, 'device id'),
         revision = Number(x.revision);
+      const executionMode =
+        x.executionMode === 'computer' ? 'computer' : 'codex';
       if (!Number.isSafeInteger(revision) || revision < 1)
         throw Error('Invalid revision.');
       const b = await loadBusiness(r, u.id, businessId);
@@ -212,9 +217,21 @@ export async function POST(req: Request) {
       const business = JSON.parse(b.data) as BusinessDocument,
         endeavor = business.work?.endeavors.find((e) => e.id === endeavorId);
       if (!endeavor) throw Error('Endeavor is unavailable.');
-      if (['completed', 'stopped', 'blocked'].includes(endeavor.status)) throw Error('Reopen or unblock this endeavor before sending work.');
+      if (['completed', 'stopped', 'blocked'].includes(endeavor.status))
+        throw Error('Reopen or unblock this endeavor before sending work.');
       const brief = buildAgentBrief(business, endeavor);
       if (brief.length > 50_000) throw Error('Brief is too large.');
+      const goal =
+        executionMode === 'computer'
+          ? [
+              endeavor.title,
+              endeavor.description,
+              `Done when: ${endeavor.completionCriteria}`,
+            ]
+              .filter(Boolean)
+              .join('\n')
+              .slice(0, 1000)
+          : undefined;
       return out(
         await queueJob(r, u.id, {
           businessId,
@@ -222,6 +239,8 @@ export async function POST(req: Request) {
           deviceId,
           revision,
           brief,
+          executionMode,
+          goal,
         }),
         201,
       );

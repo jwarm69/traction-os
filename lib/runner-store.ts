@@ -47,6 +47,7 @@ const rowDevice = (x: any): RunnerDevice => ({
   createdAt: str(x.created_at),
   revokedAt: x.revoked_at ? str(x.revoked_at) : null,
   lastSeenAt: x.last_seen_at ? str(x.last_seen_at) : null,
+  capabilities: parse(x.capabilities_json) || {},
 });
 const rowJob = (x: any): RunnerJob => ({
   id: str(x.id),
@@ -54,6 +55,8 @@ const rowJob = (x: any): RunnerJob => ({
   endeavorId: str(x.endeavor_id),
   deviceId: str(x.device_id),
   revision: Number(x.revision),
+  executionMode: x.execution_mode === 'computer' ? 'computer' : 'codex',
+  goal: x.goal ? str(x.goal) : undefined,
   status: x.status,
   brief: str(x.brief),
   result: x.result_json ? parse(x.result_json) : undefined,
@@ -102,6 +105,7 @@ export async function redeemPairCode(
   r: Runtime,
   codeInput: unknown,
   nameInput: unknown,
+  capabilities: { computerUse?: boolean } = {},
 ) {
   const code = validatePairCode(codeInput),
     name = validateDeviceName(nameInput),
@@ -130,8 +134,15 @@ export async function redeemPairCode(
     }
     try {
       await tx.execute({
-        sql: 'INSERT INTO runner_devices(id,owner_id,name,token_hash,created_at) VALUES(?,?,?,?,?)',
-        args: [deviceId, owner, name, hashSecret(token), t],
+        sql: 'INSERT INTO runner_devices(id,owner_id,name,token_hash,created_at,capabilities_json) VALUES(?,?,?,?,?,?)',
+        args: [
+          deviceId,
+          owner,
+          name,
+          hashSecret(token),
+          t,
+          json({ computerUse: capabilities.computerUse === true }),
+        ],
       });
       await tx.commit();
     } catch (e) {
@@ -239,19 +250,29 @@ export async function queueJob(
     deviceId: string;
     revision: number;
     brief: string;
+    executionMode?: 'codex' | 'computer';
+    goal?: string;
   },
 ) {
   const c = db(r),
     jobId = id('job'),
     t = now();
   try {
+    const mode = input.executionMode === 'computer' ? 'computer' : 'codex';
+    if (mode === 'computer' && (!input.goal || input.goal.length > 1000))
+      throw Error('Computer-use goal is invalid.');
     const d = await c.execute({
-      sql: 'SELECT 1 FROM runner_devices WHERE id=? AND owner_id=? AND revoked_at IS NULL',
+      sql: 'SELECT capabilities_json FROM runner_devices WHERE id=? AND owner_id=? AND revoked_at IS NULL',
       args: [input.deviceId, ownerId],
     });
     if (!d.rows.length) throw Error('Device is not available.');
+    if (
+      mode === 'computer' &&
+      parse(d.rows[0].capabilities_json)?.computerUse !== true
+    )
+      throw Error('This device was not paired with computer use enabled.');
     const inserted = await c.execute({
-      sql: "INSERT INTO runner_jobs(id,owner_id,business_id,endeavor_id,device_id,revision,brief,status,created_at) SELECT ?,?,?,?,?,?,?,'queued',? WHERE EXISTS (SELECT 1 FROM runner_devices WHERE id=? AND owner_id=? AND revoked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM runner_jobs WHERE owner_id=? AND business_id=? AND endeavor_id=? AND status IN ('queued','claimed'))",
+      sql: "INSERT INTO runner_jobs(id,owner_id,business_id,endeavor_id,device_id,revision,brief,status,created_at,execution_mode,goal) SELECT ?,?,?,?,?,?,?,'queued',?,?,? WHERE EXISTS (SELECT 1 FROM runner_devices WHERE id=? AND owner_id=? AND revoked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM runner_jobs WHERE owner_id=? AND business_id=? AND endeavor_id=? AND status IN ('queued','claimed'))",
       args: [
         jobId,
         ownerId,
@@ -261,6 +282,8 @@ export async function queueJob(
         input.revision,
         input.brief,
         t,
+        mode,
+        input.goal || null,
         input.deviceId,
         ownerId,
         ownerId,
@@ -320,7 +343,12 @@ export async function claimJob(
     });
     const x = q.rows[0];
     return x
-      ? { job: rowJob(x), leaseToken: token, brief: str(x.brief) }
+      ? {
+          job: rowJob(x),
+          leaseToken: token,
+          brief: str(x.brief),
+          goal: x.goal ? str(x.goal) : undefined,
+        }
       : null;
   } finally {
     c.close();
@@ -338,9 +366,19 @@ async function lease(
   try {
     const q = await c.execute({
       sql: "SELECT j.* FROM runner_jobs j JOIN runner_devices d ON d.id=j.device_id AND d.owner_id=j.owner_id AND d.revoked_at IS NULL WHERE j.id=? AND j.owner_id=? AND j.device_id=? AND j.status IN ('claimed','canceled') AND j.lease_token_hash=? AND j.lease_expires_at>? AND j.claimed_at>?",
-      args: [jobId, ownerId, deviceId, hashSecret(leaseToken), t, new Date(Date.now() - 30 * 60_000).toISOString()],
+      args: [
+        jobId,
+        ownerId,
+        deviceId,
+        hashSecret(leaseToken),
+        t,
+        new Date(Date.now() - 30 * 60_000).toISOString(),
+      ],
     });
-    if (!q.rows[0]) { c.close(); return null; }
+    if (!q.rows[0]) {
+      c.close();
+      return null;
+    }
     return { c, row: q.rows[0] };
   } catch (e) {
     c.close();
@@ -366,7 +404,12 @@ export async function heartbeat(
       const updated = await x.c.execute({
         sql: "UPDATE runner_jobs SET lease_expires_at=? WHERE id=? AND owner_id=? AND device_id=? AND status='claimed' AND lease_token_hash=? AND lease_expires_at>? AND EXISTS (SELECT 1 FROM runner_devices d WHERE d.id=runner_jobs.device_id AND d.revoked_at IS NULL)",
         args: [
-          new Date(Math.min(Date.now() + 120_000, new Date(str(x.row.claimed_at)).getTime() + 30 * 60_000)).toISOString(),
+          new Date(
+            Math.min(
+              Date.now() + 120_000,
+              new Date(str(x.row.claimed_at)).getTime() + 30 * 60_000,
+            ),
+          ).toISOString(),
           jobId,
           ownerId,
           deviceId,
@@ -407,10 +450,24 @@ export async function recordEvent(
     if (x.row.status !== 'claimed') return false;
     const inserted = await x.c.execute({
       sql: "INSERT OR IGNORE INTO runner_approvals(request_id,job_id,owner_id,method,details_json,decision,created_at) SELECT ?,?,?,?,?,NULL,? WHERE EXISTS (SELECT 1 FROM runner_jobs j JOIN runner_devices d ON d.id=j.device_id AND d.revoked_at IS NULL WHERE j.id=? AND j.status='claimed' AND j.lease_token_hash=? AND j.lease_expires_at>?) AND (SELECT COUNT(*) FROM runner_approvals WHERE job_id=?)<100",
-      args: [e.requestId, jobId, ownerId, e.method, json(e.details), now(), jobId, hashSecret(token), now(), jobId],
+      args: [
+        e.requestId,
+        jobId,
+        ownerId,
+        e.method,
+        json(e.details),
+        now(),
+        jobId,
+        hashSecret(token),
+        now(),
+        jobId,
+      ],
     });
     if (inserted.rowsAffected === 1) return true;
-    const existing = await x.c.execute({ sql: 'SELECT 1 FROM runner_approvals WHERE job_id=? AND request_id=?', args: [jobId, e.requestId] });
+    const existing = await x.c.execute({
+      sql: 'SELECT 1 FROM runner_approvals WHERE job_id=? AND request_id=?',
+      args: [jobId, e.requestId],
+    });
     return existing.rows.length === 1;
   } finally {
     x.c.close();
@@ -428,7 +485,17 @@ export async function decideApproval(
   try {
     const q = await c.execute({
       sql: "UPDATE runner_approvals SET decision=?,decided_at=? WHERE request_id=? AND job_id=? AND owner_id=? AND decision IS NULL AND EXISTS (SELECT 1 FROM runner_jobs j JOIN runner_devices d ON d.id=j.device_id AND d.revoked_at IS NULL WHERE j.id=? AND j.owner_id=? AND j.status='claimed' AND j.lease_expires_at>? AND j.claimed_at>?)",
-      args: [decision, t, requestId, jobId, ownerId, jobId, ownerId, t, new Date(Date.now() - 30 * 60_000).toISOString()],
+      args: [
+        decision,
+        t,
+        requestId,
+        jobId,
+        ownerId,
+        jobId,
+        ownerId,
+        t,
+        new Date(Date.now() - 30 * 60_000).toISOString(),
+      ],
     });
     return q.rowsAffected === 1;
   } finally {

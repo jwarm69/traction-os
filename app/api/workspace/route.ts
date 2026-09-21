@@ -68,7 +68,13 @@ import {
 } from '@/lib/connections';
 import { parseSignalsCsv } from '@/lib/csv';
 import { runAI } from '@/lib/ai';
-import { beginExecution, executionPrompt, failExecution, finishExecution, saveExecutionArtifact } from '@/lib/execution';
+import {
+  beginExecution,
+  executionPrompt,
+  failExecution,
+  finishExecution,
+  saveExecutionArtifact,
+} from '@/lib/execution';
 import { budgetStatus } from '@/lib/ai-budget';
 import { authenticateRequest, type AuthUser as User } from '@/lib/auth';
 import { runtime } from '@/lib/runtime';
@@ -288,11 +294,7 @@ async function loadOrImport(u: User, id?: string) {
 }
 export async function GET(req: Request) {
   const u = await authenticateRequest(runtime(), req);
-  if (!u)
-    return out(
-      { error: 'Sign in to open your businesses.' },
-      401,
-    );
+  if (!u) return out({ error: 'Sign in to open your businesses.' }, 401);
   try {
     return out(
       await loadOrImport(
@@ -310,8 +312,7 @@ export async function GET(req: Request) {
 }
 export async function POST(req: Request) {
   const u = await authenticateRequest(runtime(), req);
-  if (!u)
-    return out({ error: 'Sign in to save your work.' }, 401);
+  if (!u) return out({ error: 'Sign in to save your work.' }, 401);
   try {
     if (
       req.headers.get('origin') &&
@@ -419,38 +420,114 @@ export async function POST(req: Request) {
       const initial = JSON.parse(JSON.stringify(b)) as BusinessDocument;
       const target = endeavorFor(initial, endeavorId);
       const prompt = executionPrompt(initial, target, instruction);
-      const run = beginExecution(initial, endeavorId, instruction, row.revision, prompt);
+      const run = beginExecution(
+        initial,
+        endeavorId,
+        instruction,
+        row.revision,
+        prompt,
+      );
       const startedData = JSON.stringify(initial);
-      if (startedData.length > 500000) throw Error('This business record is too large to start a run. Export and trim older raw data.');
-      const startedRevision = await saveBusiness(runtime(), u, id, startedData, row.revision);
+      if (startedData.length > 500000)
+        throw Error(
+          'This business record is too large to start a run. Export and trim older raw data.',
+        );
+      const startedRevision = await saveBusiness(
+        runtime(),
+        u,
+        id,
+        startedData,
+        row.revision,
+      );
       if (startedRevision === null)
-        return out({ error: 'This work changed before the run could start. Reload and try again.' }, 409);
+        return out(
+          {
+            error:
+              'This work changed before the run could start. Reload and try again.',
+          },
+          409,
+        );
       try {
         const search = target.kind === 'research' || target.kind === 'outreach';
-        const answer = initial.mode === 'demo'
-          ? { content: `# ${target.title}\n\n## Next useful deliverable\nThis is a fictional demo run. Prepare the smallest owner-reviewed ${target.kind.replace('_', ' ')} deliverable described in the Do brief.\n\n## Owner review\nVerify claims, links, names, and any external action before use.`, nextDecision: 'Review the draft and decide whether to continue, revise, or test it.', __searchSources: [] }
-          : await runAI(runtime(), u.id, txt(x.key || '', 500), prompt, search);
+        const answer =
+          initial.mode === 'demo'
+            ? {
+                content: `# ${target.title}\n\n## Next useful deliverable\nThis is a fictional demo run. Prepare the smallest owner-reviewed ${target.kind.replace('_', ' ')} deliverable described in the Do brief.\n\n## Owner review\nVerify claims, links, names, and any external action before use.`,
+                nextDecision:
+                  'Review the draft and decide whether to continue, revise, or test it.',
+                __searchSources: [],
+              }
+            : await runAI(
+                runtime(),
+                u.id,
+                txt(x.key || '', 500),
+                prompt,
+                search,
+              );
         const sources = Array.isArray(answer.__searchSources)
-          ? answer.__searchSources.filter((value): value is string => typeof value === 'string').slice(0, 50).map((value) => sourceUrl(value))
+          ? answer.__searchSources
+              .filter((value): value is string => typeof value === 'string')
+              .slice(0, 50)
+              .map((value) => sourceUrl(value))
           : [];
         if (search && initial.mode !== 'demo' && !sources.length)
-          throw Error('The run returned no inspectable provider source evidence.');
+          throw Error(
+            'The run returned no inspectable provider source evidence.',
+          );
         const content = required(answer.content, 20000);
         const nextDecision = required(answer.nextDecision, 2000);
         let finalRevision: number | null = null;
-        for (let attempt = 0; attempt < 3 && finalRevision === null; attempt++) {
+        for (
+          let attempt = 0;
+          attempt < 3 && finalRevision === null;
+          attempt++
+        ) {
           const latest = await loadBusiness(runtime(), u.id, id);
-          if (!latest) throw Error('Business disappeared while the run was executing.');
+          if (!latest)
+            throw Error('Business disappeared while the run was executing.');
           const completed = JSON.parse(latest.data) as BusinessDocument;
           const latestTarget = endeavorFor(completed, endeavorId);
-          const artifact = saveExecutionArtifact(completed, endeavorId, latestTarget.kind === 'research' ? 'research_notes' : latestTarget.kind === 'outreach' ? 'outreach' : latestTarget.kind === 'content' || latestTarget.kind === 'campaign' ? 'content' : 'product_brief', content, `${latestTarget.title} — run draft`, sources);
-          finishExecution(completed, endeavorId, run.id, { artifactId: artifact.id, nextDecision });
+          const artifact = saveExecutionArtifact(
+            completed,
+            endeavorId,
+            latestTarget.kind === 'research'
+              ? 'research_notes'
+              : latestTarget.kind === 'outreach'
+                ? 'outreach'
+                : latestTarget.kind === 'content' ||
+                    latestTarget.kind === 'campaign'
+                  ? 'content'
+                  : 'product_brief',
+            content,
+            `${latestTarget.title} — run draft`,
+            sources,
+          );
+          finishExecution(completed, endeavorId, run.id, {
+            artifactId: artifact.id,
+            nextDecision,
+          });
           const serialized = JSON.stringify(completed);
-          if (serialized.length > 500000) throw Error('This run produced too much saved context. Shorten older work before running again.');
-          finalRevision = await saveBusiness(runtime(), u, id, serialized, latest.revision);
+          if (serialized.length > 500000)
+            throw Error(
+              'This run produced too much saved context. Shorten older work before running again.',
+            );
+          finalRevision = await saveBusiness(
+            runtime(),
+            u,
+            id,
+            serialized,
+            latest.revision,
+          );
         }
-        if (finalRevision === null) throw Error('The business kept changing while the run was finishing.');
-        return out({ ...(await loadOrImport(u, id)), revision: finalRevision, runId: run.id });
+        if (finalRevision === null)
+          throw Error(
+            'The business kept changing while the run was finishing.',
+          );
+        return out({
+          ...(await loadOrImport(u, id)),
+          revision: finalRevision,
+          runId: run.id,
+        });
       } catch (e) {
         const error = e instanceof Error ? e.message : 'The run failed.';
         for (let attempt = 0; attempt < 3; attempt++) {
@@ -458,11 +535,30 @@ export async function POST(req: Request) {
           if (!latest) break;
           const failed = JSON.parse(latest.data) as BusinessDocument;
           failExecution(failed, endeavorId, run.id, error);
-          const saved = await saveBusiness(runtime(), u, id, JSON.stringify(failed), latest.revision);
+          const saved = await saveBusiness(
+            runtime(),
+            u,
+            id,
+            JSON.stringify(failed),
+            latest.revision,
+          );
           if (saved !== null)
-            return out({ ...(await loadOrImport(u, id)), revision: saved, runId: run.id, warning: error }, 200);
+            return out(
+              {
+                ...(await loadOrImport(u, id)),
+                revision: saved,
+                runId: run.id,
+                warning: error,
+              },
+              200,
+            );
         }
-        return out({ error: `${error} The run state could not be refreshed; reload before retrying.` }, 400);
+        return out(
+          {
+            error: `${error} The run state could not be refreshed; reload before retrying.`,
+          },
+          400,
+        );
       }
     }
     if (op === 'create_idea') {
@@ -470,11 +566,7 @@ export async function POST(req: Request) {
     } else if (op === 'update_idea') {
       updateIdea(b, required(x.ideaId, 100), ideaInput(x));
     } else if (op === 'park_idea') {
-      parkIdea(
-        b,
-        required(x.ideaId, 100),
-        required(x.reason, 1200),
-      );
+      parkIdea(b, required(x.ideaId, 100), required(x.reason, 1200));
     } else if (op === 'restore_idea') {
       restoreIdea(b, required(x.ideaId, 100));
     } else if (op === 'pursue_idea') {
@@ -503,15 +595,14 @@ export async function POST(req: Request) {
     } else if (op === 'explore_chat') {
       const message = required(x.message, 5000);
       const ideaId = txt(x.ideaId || '', 100) || undefined;
-      if (
-        ideaId &&
-        !b.explore?.ideas.some((idea) => idea.id === ideaId)
-      )
+      if (ideaId && !b.explore?.ideas.some((idea) => idea.id === ideaId))
         throw Error('Explore idea not found.');
       addExploreMessage(b, { role: 'owner', content: message, ideaId });
       const firstData = JSON.stringify(b);
       if (firstData.length > 500000)
-        throw Error('This business record is full. Shorten older discussions before continuing.');
+        throw Error(
+          'This business record is full. Shorten older discussions before continuing.',
+        );
       const firstRevision = await saveBusiness(
         runtime(),
         u,
@@ -520,7 +611,10 @@ export async function POST(req: Request) {
         row.revision,
       );
       if (firstRevision === null)
-        return out({ error: 'This business changed in another tab. Reload to see it.' }, 409);
+        return out(
+          { error: 'This business changed in another tab. Reload to see it.' },
+          409,
+        );
       let answer: Record<string, unknown>;
       try {
         const context = {
@@ -678,16 +772,39 @@ export async function POST(req: Request) {
         });
       return out({ ...(await loadOrImport(u, id)), revision: finalRevision });
     } else if (op === 'run_ideation') {
-      const prompt = txt(x.prompt || '', 2000) ||
+      const prompt =
+        txt(x.prompt || '', 2000) ||
         'Generate the strongest distinct marketing and product-growth possibilities for gaining useful traction now.';
       const answer =
         b.mode === 'demo'
           ? {
-              reply: 'Here are three deliberately different directions to compare. They remain proposals until the owner saves one.',
+              reply:
+                'Here are three deliberately different directions to compare. They remain proposals until the owner saves one.',
               suggestions: [
-                { title: 'Audience problem content series', kind: 'content', description: 'Create a repeatable educational format around one confirmed audience problem.', audience: 'The confirmed target audience', outcome: 'A reviewed repeatable content format' },
-                { title: 'Small creator-fit shortlist', kind: 'research', description: 'Research a small set of creators whose public work overlaps the audience problem.', audience: 'Potential creator audiences', outcome: 'A sourced, owner-reviewed shortlist' },
-                { title: 'First-value product walkthrough', kind: 'product_improvement', description: 'Review the path from arrival to first useful outcome and document the highest-friction step.', audience: 'New eligible users', outcome: 'One implementation-ready improvement brief' },
+                {
+                  title: 'Audience problem content series',
+                  kind: 'content',
+                  description:
+                    'Create a repeatable educational format around one confirmed audience problem.',
+                  audience: 'The confirmed target audience',
+                  outcome: 'A reviewed repeatable content format',
+                },
+                {
+                  title: 'Small creator-fit shortlist',
+                  kind: 'research',
+                  description:
+                    'Research a small set of creators whose public work overlaps the audience problem.',
+                  audience: 'Potential creator audiences',
+                  outcome: 'A sourced, owner-reviewed shortlist',
+                },
+                {
+                  title: 'First-value product walkthrough',
+                  kind: 'product_improvement',
+                  description:
+                    'Review the path from arrival to first useful outcome and document the highest-friction step.',
+                  audience: 'New eligible users',
+                  outcome: 'One implementation-ready improvement brief',
+                },
               ],
             }
           : await runAI(
@@ -715,7 +832,10 @@ export async function POST(req: Request) {
         content: required(answer.reply, 5000),
         suggestions,
       });
-      addLog(b, 'Portfolio ideation pass completed; suggestions await owner selection.');
+      addLog(
+        b,
+        'Portfolio ideation pass completed; suggestions await owner selection.',
+      );
     } else if (op === 'select_idea') {
       selectIdea(b, required(x.ideaId, 100), {
         intendedDeliverables: stringList(x.intendedDeliverables, 10, 1200),
@@ -747,11 +867,7 @@ export async function POST(req: Request) {
         x.done === true,
       );
     } else if (op === 'add_checklist_item') {
-      addChecklistItem(
-        b,
-        required(x.endeavorId, 100),
-        required(x.text, 1200),
-      );
+      addChecklistItem(b, required(x.endeavorId, 100), required(x.text, 1200));
     } else if (op === 'save_artifact') {
       saveArtifact(b, required(x.endeavorId, 100), {
         artifactId: txt(x.artifactId || '', 100) || undefined,
@@ -814,9 +930,14 @@ export async function POST(req: Request) {
                 {
                   name: 'Fictional example candidate',
                   url: 'https://example.com/',
-                  observedFacts: ['This is a demo-only placeholder, not a real researched fact.'],
-                  fitRationale: 'Use this card to practice reviewing a candidate.',
-                  uncertainties: ['Real audience fit, contact route, availability, and terms are unknown.'],
+                  observedFacts: [
+                    'This is a demo-only placeholder, not a real researched fact.',
+                  ],
+                  fitRationale:
+                    'Use this card to practice reviewing a candidate.',
+                  uncertainties: [
+                    'Real audience fit, contact route, availability, and terms are unknown.',
+                  ],
                 },
               ],
             }
@@ -836,7 +957,9 @@ export async function POST(req: Request) {
           .map((value) => canonicalSource(sourceUrl(value))),
       );
       if (b.mode !== 'demo' && !providerSources.size)
-        throw Error('Research returned no inspectable provider source evidence.');
+        throw Error(
+          'Research returned no inspectable provider source evidence.',
+        );
       addResearchCandidates(
         b,
         endeavor.id,
@@ -844,14 +967,20 @@ export async function POST(req: Request) {
           const candidate = object(value);
           const url = sourceUrl(candidate.url);
           if (b.mode !== 'demo' && !providerSources.has(canonicalSource(url)))
-            throw Error('A research candidate URL was not supported by provider source evidence.');
+            throw Error(
+              'A research candidate URL was not supported by provider source evidence.',
+            );
           return {
             name: required(candidate.name, 200),
             url,
             retrievedAt,
             observedFacts: nonEmptyStringList(candidate.observedFacts, 8, 1000),
             fitRationale: required(candidate.fitRationale, 2000),
-            uncertainties: nonEmptyStringList(candidate.uncertainties || [], 8, 1000),
+            uncertainties: nonEmptyStringList(
+              candidate.uncertainties || [],
+              8,
+              1000,
+            ),
           };
         }),
       );
@@ -880,7 +1009,9 @@ export async function POST(req: Request) {
       if (!['now', 'next', 'maintain', 'paused'].includes(priority))
         throw Error('Choose a valid portfolio priority.');
       const ownerHours =
-        x.ownerHours === null || x.ownerHours === '' || x.ownerHours === undefined
+        x.ownerHours === null ||
+        x.ownerHours === '' ||
+        x.ownerHours === undefined
           ? null
           : numeric(x.ownerHours);
       setPortfolio(b, {
@@ -941,11 +1072,21 @@ export async function POST(req: Request) {
       if (x.fields) {
         const fields = object(x.fields);
         const confirmations = object(x.confirmations || {});
-        const keys: BriefFieldKey[] = ['offer', 'audience', 'readiness', 'objective', 'resources'];
+        const keys: BriefFieldKey[] = [
+          'offer',
+          'audience',
+          'readiness',
+          'objective',
+          'resources',
+        ];
         saveGuidedDraft(
           b,
-          Object.fromEntries(keys.map((key) => [key, txt(fields[key] || '', 3000)])) as Record<BriefFieldKey, string>,
-          Object.fromEntries(keys.map((key) => [key, confirmations[key] === true])),
+          Object.fromEntries(
+            keys.map((key) => [key, txt(fields[key] || '', 3000)]),
+          ) as Record<BriefFieldKey, string>,
+          Object.fromEntries(
+            keys.map((key) => [key, confirmations[key] === true]),
+          ),
           txt(x.ownerNotes || '', 8000),
         );
       }
@@ -966,7 +1107,9 @@ export async function POST(req: Request) {
           : ['No comparable measured baseline is recorded.'],
         alternatives: Array.isArray(x.alternatives)
           ? x.alternatives.slice(0, 4).map((v) => required(v, 800))
-          : ['The constraint may be acquisition, activation, or offer clarity.'],
+          : [
+              'The constraint may be acquisition, activation, or offer clarity.',
+            ],
         nextObservation: required(x.nextObservation, 1200),
         confidence: hasBaseline ? 'medium' : 'low',
         agreedAt: new Date().toISOString(),
@@ -979,7 +1122,9 @@ export async function POST(req: Request) {
       if (!brief || !flow.diagnosis)
         throw Error('Agree on the brief and uncertainty before planning.');
       if (!guidedDraftMatchesActive(flow))
-        throw Error('The business draft changed. Confirm a new brief before using AI to plan.');
+        throw Error(
+          'The business draft changed. Confirm a new brief before using AI to plan.',
+        );
       const beforeRevision = row.revision;
       const shape = (a: Record<string, unknown>) => ({
         title: required(a.title, 200),
@@ -1012,8 +1157,10 @@ export async function POST(req: Request) {
             'Confirm the promise, choose the eligible participants, and record completion.',
           timeWindow: '14 days',
           cost: '$0 external spend; within the confirmed owner time',
-          metric: 'Eligible participants who reach the confirmed first useful outcome',
-          successRule: 'At least 3 of 5 invited participants reach the first useful outcome.',
+          metric:
+            'Eligible participants who reach the confirmed first useful outcome',
+          successRule:
+            'At least 3 of 5 invited participants reach the first useful outcome.',
           stoppingRule:
             'Stop at 14 days, after five completed attempts, or immediately if the promised workflow is unavailable.',
           measurementPlan:
@@ -1045,6 +1192,7 @@ export async function POST(req: Request) {
           u.id,
           txt(x.key || '', 500),
           `Propose exactly one smallest useful experiment grounded only in this confirmed brief. Return {title,uncertainty,rationale,audience,action,ownerContribution,timeWindow,cost,metric,successRule,stoppingRule,measurementPlan,alternatives:[string]}. Include denominators and a finite stopping rule. The experiment must directly test the agreed uncertainty and next observation. Internal reviews or self-scoring cannot establish customer usefulness, demand, or willingness to pay. If real customer observation is needed, propose it explicitly as a future owner-approved step, with recruitment and access dependencies; do not substitute an internal checklist. Alternatives must explain why other experiment directions are deferred, not list minor variations of the same action. Missing baseline stays unknown. This is a proposal only: you may describe future outreach or owner actions, but must not claim they are authorized, started, or completed. Respect confirmed time, budget, and readiness. Context: ${JSON.stringify(boundedContext)}`,
+          { workload: 'strategic' },
         );
         const latest = await loadBusiness(runtime(), u.id, id);
         if (!latest || latest.revision !== beforeRevision)
@@ -1063,17 +1211,32 @@ export async function POST(req: Request) {
     } else if (op === 'save_context') {
       const update = required(x.update, 4000);
       const notes = [b.notes, update].filter(Boolean).join('\n\n');
-      if (notes.length > 16000) throw Error('Your notes are full. Edit your business context to make room before adding more.');
+      if (notes.length > 16000)
+        throw Error(
+          'Your notes are full. Edit your business context to make room before adding more.',
+        );
       b.notes = notes;
       delete b.contextDraft;
       invalidateGuidedBrief(b);
       addLog(b, 'Owner update saved to business context.');
     } else if (op === 'organize_context') {
-      const a = await runAI(runtime(), u.id, txt(x.key || '', 500),
-        `Help the owner understand their business context. Return {summary,questions:[string]}. Summarize in at most 250 words; ask at most 3 specific, useful questions that would change the next growth decision. Treat each saved market as a distinct operating context and never transfer evidence between them. Distinguish owner statements, unreviewed research and proposed goals. Do not invent or claim completed work. Use only this context: ${JSON.stringify({name:b.name,goal:b.goal,budget:b.budget,notes:b.notes,markets:b.markets || [],facts:b.facts.slice(-12),rounds:b.rounds.slice(-2),signals:b.signals.slice(-8)})}`);
-      if (!Array.isArray(a.questions) || a.questions.length > 3) throw Error('The assistant returned an invalid set of questions.');
-      b.contextDraft = { summary: required(a.summary, 4000), questions: a.questions.map(q => required(q, 500)), generatedAt: new Date().toISOString() };
-      addLog(b, 'Assistant summarized saved context and suggested calibration questions.');
+      const a = await runAI(
+        runtime(),
+        u.id,
+        txt(x.key || '', 500),
+        `Help the owner understand their business context. Return {summary,questions:[string]}. Summarize in at most 250 words; ask at most 3 specific, useful questions that would change the next growth decision. Treat each saved market as a distinct operating context and never transfer evidence between them. Distinguish owner statements, unreviewed research and proposed goals. Do not invent or claim completed work. Use only this context: ${JSON.stringify({ name: b.name, goal: b.goal, budget: b.budget, notes: b.notes, markets: b.markets || [], facts: b.facts.slice(-12), rounds: b.rounds.slice(-2), signals: b.signals.slice(-8) })}`,
+      );
+      if (!Array.isArray(a.questions) || a.questions.length > 3)
+        throw Error('The assistant returned an invalid set of questions.');
+      b.contextDraft = {
+        summary: required(a.summary, 4000),
+        questions: a.questions.map((q) => required(q, 500)),
+        generatedAt: new Date().toISOString(),
+      };
+      addLog(
+        b,
+        'Assistant summarized saved context and suggested calibration questions.',
+      );
     } else if (op === 'update_profile') {
       b.name = required(x.name, 200);
       b.goal = txt(x.goal, 2000);
@@ -1208,6 +1371,7 @@ export async function POST(req: Request) {
           u.id,
           txt(x.key || '', 500),
           `Design the next distinct experiment round from this evidence. Return {experiments:[{channel,hypothesis,action,metric,target}]}, 3-8 experiments with positive integer targets, within stated resources. Keep every action and metric scoped to one named market unless the evidence explicitly supports a cross-market test. Use past results to avoid blind repetition. Context: ${JSON.stringify(context)}`,
+          { workload: 'strategic' },
         );
         if (
           !Array.isArray(a.experiments) ||
@@ -1383,7 +1547,7 @@ export async function POST(req: Request) {
       )?.value;
       let subject = `A quick question for ${p.company}`,
         body = `Hi ${p.name},\n\nI’m reaching out because ${p.reason}\n\n${supportedOffer ? `${b.name} helps with ${supportedOffer}` : `[Owner: add one accurate sentence about how ${b.name} helps this prospect.]`} Would a short conversation be useful?\n\nBest,\n${b.name}`;
-      if (x.key || runtime().OPENAI_API_KEY) {
+      if (x.key || runtime().DEEPSEEK_API_KEY || runtime().OPENAI_API_KEY) {
         const a = await runAI(
           runtime(),
           u.id,

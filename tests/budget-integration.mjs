@@ -62,6 +62,14 @@ try {
     usageMicros({ usage: { input_tokens: -1, output_tokens: 0 } }, false),
     null,
   );
+  assert.equal(
+    usageMicros(
+      { usage: { input_tokens: 1000000, output_tokens: 1000000 } },
+      false,
+      'deepseek',
+    ).amount,
+    1650000,
+  );
   console.log(
     'PASS budget: concurrent cap, idempotent settlement, uncertain hold, invalid usage. No AI provider called.',
   );

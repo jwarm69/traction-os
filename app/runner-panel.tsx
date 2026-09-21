@@ -23,6 +23,7 @@ type Device = {
   createdAt?: string;
   revokedAt?: string | null;
   status?: string;
+  capabilities?: { computerUse?: boolean };
 };
 type Approval = {
   requestId: string;
@@ -39,6 +40,7 @@ type Job = {
   sourceJobId?: string;
   endeavorId?: string;
   approvals?: Approval[];
+  executionMode?: 'codex' | 'computer';
 };
 type Snapshot = {
   available?: boolean;
@@ -76,11 +78,20 @@ export default function RunnerPanel({
   } | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
+  const [executionMode, setExecutionMode] = useState<'codex' | 'computer'>(
+    'codex',
+  );
   const request = useRef(0);
   const inFlight = useRef(false);
   const loading = useRef(false);
   const mounted = useRef(true);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; request.current += 1; }; }, []);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      request.current += 1;
+    };
+  }, []);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -114,8 +125,14 @@ export default function RunnerPanel({
             code: data.pairingCode,
             expiresAt: data.pairingCodeExpiresAt,
           });
-        const devices = (data.devices || []).filter((device) => !device.revokedAt);
-        setSelectedDevice((current) => devices.some((device) => device.id === current) ? current : devices[0]?.id || '');
+        const devices = (data.devices || []).filter(
+          (device) => !device.revokedAt,
+        );
+        setSelectedDevice((current) =>
+          devices.some((device) => device.id === current)
+            ? current
+            : devices[0]?.id || '',
+        );
       } catch (cause) {
         if ((cause as Error).name !== 'AbortError' && id === request.current)
           setError(
@@ -123,7 +140,9 @@ export default function RunnerPanel({
               ? cause.message
               : 'Could not load runner setup.',
           );
-      } finally { loading.current = false; }
+      } finally {
+        loading.current = false;
+      }
     },
     [b.id],
   );
@@ -155,7 +174,8 @@ export default function RunnerPanel({
         ok?: boolean;
       };
       if (!mounted.current) return null;
-      if (!response.ok || data.ok === false || data.available === false) throw new Error(data.error || 'Runner request failed.');
+      if (!response.ok || data.ok === false || data.available === false)
+        throw new Error(data.error || 'Runner request failed.');
       if (data.code) setPairing({ code: data.code, expiresAt: data.expiresAt });
       await load();
       return data;
@@ -184,7 +204,10 @@ export default function RunnerPanel({
 
   useEffect(() => {
     if (!pairing?.expiresAt) return;
-    const timer = window.setTimeout(() => setPairing(null), Math.max(0, Date.parse(pairing.expiresAt) - Date.now()));
+    const timer = window.setTimeout(
+      () => setPairing(null),
+      Math.max(0, Date.parse(pairing.expiresAt) - Date.now()),
+    );
     return () => window.clearTimeout(timer);
   }, [pairing]);
 
@@ -198,6 +221,7 @@ export default function RunnerPanel({
         endeavorId: selected.id,
         deviceId: selectedDevice,
         revision,
+        executionMode,
       });
   };
   const approval = async (
@@ -230,9 +254,10 @@ export default function RunnerPanel({
         </Button>
       </div>
       <p className="runner-disclosure">
-        Setup sends the selected job data to your paired device and the local
-        Codex account signed in there. Approvals are always specific to one
-        command or file—there is no approve-all setting.
+        Research uses the local Codex account. Computer use runs on your Mac
+        through TypeSafe and pauses before clicks, typing, navigation, or
+        submission. Screen captures stay on that Mac; extracted screen text and
+        controls are sent to TypeSafe to choose each step.
       </p>
       {error && (
         <p className="runner-error" role="alert">
@@ -329,21 +354,66 @@ export default function RunnerPanel({
               <select
                 aria-label="Choose paired device"
                 value={selectedDevice}
-                onChange={(event) => setSelectedDevice(event.target.value)}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  setSelectedDevice(next);
+                  if (
+                    !snapshot?.devices?.find((device) => device.id === next)
+                      ?.capabilities?.computerUse
+                  )
+                    setExecutionMode('codex');
+                }}
                 disabled={!snapshot?.devices?.length || !!activeJob}
               >
                 <option value="">Choose a device</option>
-                {(snapshot?.devices || []).filter((device) => !device.revokedAt).map((device) => (
-                  <option key={device.id} value={device.id}>
-                    {device.name}
-                  </option>
-                ))}
+                {(snapshot?.devices || [])
+                  .filter((device) => !device.revokedAt)
+                  .map((device) => (
+                    <option key={device.id} value={device.id}>
+                      {device.name}
+                    </option>
+                  ))}
               </select>
+              <fieldset className="runner-mode" aria-label="Execution mode">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={executionMode === 'codex' ? 'default' : 'outline'}
+                  onClick={() => setExecutionMode('codex')}
+                >
+                  Research
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={executionMode === 'computer' ? 'default' : 'outline'}
+                  disabled={
+                    !snapshot?.devices?.find(
+                      (device) => device.id === selectedDevice,
+                    )?.capabilities?.computerUse
+                  }
+                  onClick={() => setExecutionMode('computer')}
+                >
+                  Use computer
+                </Button>
+              </fieldset>
               <Button
-                disabled={!selectedDevice || !!activeJob || !!busy || ['completed', 'stopped', 'blocked'].includes(selected.status)}
+                disabled={
+                  !selectedDevice ||
+                  !!activeJob ||
+                  !!busy ||
+                  (executionMode === 'computer' &&
+                    !snapshot?.devices?.find(
+                      (device) => device.id === selectedDevice,
+                    )?.capabilities?.computerUse) ||
+                  ['completed', 'stopped', 'blocked'].includes(selected.status)
+                }
                 onClick={run}
               >
-                <Play size={14} /> Send to desktop
+                <Play size={14} />{' '}
+                {executionMode === 'computer'
+                  ? 'Do on this Mac'
+                  : 'Research on desktop'}
               </Button>
             </div>
           )}
@@ -374,7 +444,11 @@ export default function RunnerPanel({
                 .filter((item) => !item.decision)
                 .map((item) => (
                   <div className="runner-approval" key={item.requestId}>
-                    <strong>Approval needed: {item.method}</strong>
+                    <strong>
+                      {item.method === 'computer/action/requestApproval'
+                        ? 'Allow this computer action?'
+                        : `Approval needed: ${item.method}`}
+                    </strong>
                     <pre>{JSON.stringify(item.details ?? null, null, 2)}</pre>
                     <div>
                       <Button

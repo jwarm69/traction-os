@@ -5,13 +5,19 @@ import { createInterface } from 'node:readline/promises';
 import { TractionRunner, RunnerHttp } from './runner/client.mjs';
 
 const args = new Map();
-const flags = new Set(['pair', 'allow-local-http', 'help']);
+const flags = new Set([
+  'pair',
+  'allow-local-http',
+  'enable-computer-use',
+  'help',
+]);
 const values = new Set([
   'server',
   'workspace',
   'name',
   'max-runtime-ms',
   'codex-home',
+  'python',
 ]);
 for (let i = 2; i < process.argv.length; i++) {
   const name = process.argv[i].replace(/^--/, '');
@@ -31,7 +37,7 @@ if (
   !args.has('pair')
 ) {
   console.log(
-    'Usage: node scripts/traction-runner.mjs --server https://traction.example --pair --workspace /absolute/task-folder [--codex-home /absolute/codex-home] [--allow-local-http]',
+    'Usage: node scripts/traction-runner.mjs --server https://traction.example --pair --workspace /absolute/task-folder [--codex-home /absolute/codex-home] [--enable-computer-use] [--python /path/to/python] [--allow-local-http]',
   );
   process.exit(args.has('help') ? 0 : 2);
 }
@@ -63,6 +69,7 @@ const paired = await http.post('/api/runner', {
   op: 'pair',
   code,
   deviceName: args.get('name') || os.hostname(),
+  computerUse: args.has('enable-computer-use'),
 });
 if (!paired?.token || !paired?.deviceId)
   throw new Error('Pairing did not return device credentials.');
@@ -74,6 +81,10 @@ const runner = new TractionRunner({
   codexHome,
   allowLocalHttp,
   maxRuntimeMs,
+  computerUse: args.has('enable-computer-use'),
+  python: args.get('python') || 'python3',
+  computerBridge: new URL('./computer-use/traction_bridge.py', import.meta.url)
+    .pathname,
 });
 console.log(
   'Paired. Keep this terminal open. Device credentials remain in memory; pair again after restart.',

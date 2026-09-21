@@ -88,8 +88,13 @@ export default function Workspace({ username }: { username: string }) {
     }
   };
   useEffect(() => {
-    const selected = new URL(window.location.href).searchParams.get('businessId');
-    fetch('/api/workspace' + (selected ? '?businessId=' + encodeURIComponent(selected) : ''))
+    const selected = new URL(window.location.href).searchParams.get(
+      'businessId',
+    );
+    fetch(
+      '/api/workspace' +
+        (selected ? '?businessId=' + encodeURIComponent(selected) : ''),
+    )
       .then(async (r) => {
         const d = (await r.json()) as Res;
         if (!r.ok) throw Error(d.error);
@@ -127,7 +132,14 @@ export default function Workspace({ username }: { username: string }) {
         setTab('explore');
         setForm({});
       }
-      setNotice(d.warning || (op === 'save_context' ? 'Business update saved. Future plans will use this context.' : op === 'organize_context' ? 'Your context summary is ready below.' : 'Saved to your business.'));
+      setNotice(
+        d.warning ||
+          (op === 'save_context'
+            ? 'Business update saved. Future plans will use this context.'
+            : op === 'organize_context'
+              ? 'Your context summary is ready below.'
+              : 'Saved to your business.'),
+      );
       return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not finish.');
@@ -188,16 +200,30 @@ export default function Workspace({ username }: { username: string }) {
             <KeyRound size={15} /> Connections
           </Button>
           <form action="/api/auth/logout" method="post">
-            <Button type="submit" variant="ghost" size="sm">Sign out</Button>
+            <Button type="submit" variant="ghost" size="sm">
+              Sign out
+            </Button>
           </form>
         </div>
       </header>
       <div className="owner-layout">
         <aside className="business-nav">
-          <label className="mobile-business-label" htmlFor="business-picker">Business</label>
-          <select id="business-picker" className="mobile-business-picker" value={b?.id || ''} disabled={!!busy} onChange={e => select(e.target.value)}>
+          <label className="mobile-business-label" htmlFor="business-picker">
+            Business
+          </label>
+          <select
+            id="business-picker"
+            className="mobile-business-picker"
+            value={b?.id || ''}
+            disabled={!!busy}
+            onChange={(e) => select(e.target.value)}
+          >
             {!b && <option value="">Choose a business</option>}
-            {businesses.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+            {businesses.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.name}
+              </option>
+            ))}
           </select>
           <p className="eyebrow">BUSINESSES</p>
           {businesses.map((x) => (
@@ -222,7 +248,7 @@ export default function Workspace({ username }: { username: string }) {
             disabled={!!busy}
             onClick={() => {
               setShowNew(true);
-      setTab('explore');
+              setTab('explore');
             }}
           >
             <Plus size={15} /> Add business
@@ -243,7 +269,11 @@ export default function Workspace({ username }: { username: string }) {
               requests. New research may pause before the balance reaches zero.
             </p>
           )}
-          {notice && <output className="saved-notice" style={{display:'block'}}>{notice}</output>}
+          {notice && (
+            <output className="saved-notice" style={{ display: 'block' }}>
+              {notice}
+            </output>
+          )}
           {error && (
             <div className="error">
               {error}
@@ -255,7 +285,9 @@ export default function Workspace({ username }: { username: string }) {
           {busy && (
             <div className="working">
               <RefreshCw className="spin" size={15} />
-              {busy === 'organize_context' ? 'Reading your business context… This can take a moment.' : 'Working on your request…'}
+              {busy === 'organize_context'
+                ? 'Reading your business context… This can take a moment.'
+                : 'Working on your request…'}
             </div>
           )}
           {tab === 'connections' && !b ? (
@@ -287,7 +319,9 @@ export default function Workspace({ username }: { username: string }) {
             />
           ) : (
             <>
-              <div className={`workspace-heading ${tab === 'today' ? 'compact-heading' : ''}`}>
+              <div
+                className={`workspace-heading ${tab === 'today' ? 'compact-heading' : ''}`}
+              >
                 <div>
                   <p className="eyebrow">
                     OWNER WORKSPACE /{' '}
@@ -311,12 +345,18 @@ export default function Workspace({ username }: { username: string }) {
                 </div>
               )}
               <Tabs value={tab} onValueChange={(v) => setTab(String(v))}>
-                <TabsList className={`owner-tabs ${tab === 'today' ? 'compact-tabs' : ''}`} variant="line">
+                <TabsList
+                  className={`owner-tabs ${tab === 'today' ? 'compact-tabs' : ''}`}
+                  variant="line"
+                >
                   {[
                     ['explore', 'Explore'],
                     ['do', 'Do'],
                     ['portfolio', 'Portfolio'],
-                    ['markets', b.marketLabel === 'Campus' ? 'Campuses' : 'Markets'],
+                    [
+                      'markets',
+                      b.marketLabel === 'Campus' ? 'Campuses' : 'Markets',
+                    ],
                     ['today', 'Next move'],
                     ['memory', 'Business context'],
                     ['rounds', 'Growth plan'],
@@ -327,22 +367,82 @@ export default function Workspace({ username }: { username: string }) {
                     </TabsTrigger>
                   ))}
                 </TabsList>
-                {tab !== 'today' && <div className="secondary-tools"><Button variant="ghost" size="sm" onClick={() => setTab('outreach')}>Prospects & messages</Button><Button variant="ghost" size="sm" onClick={() => setTab('reviews')}>Weekly review</Button></div>}
+                {tab !== 'today' && (
+                  <div className="secondary-tools">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setTab('outreach')}
+                    >
+                      Prospects & messages
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setTab('reviews')}
+                    >
+                      Weekly review
+                    </Button>
+                  </div>
+                )}
                 <TabsContent value="explore">
-                  <ExploreWorkspace key={b.id} b={b} act={act} busy={!!busy} aiReady={b.mode === 'demo' || !!key || !!aiBudget?.enabled} openDo={() => setTab('do')} />
+                  <ExploreWorkspace
+                    key={b.id}
+                    b={b}
+                    act={act}
+                    busy={!!busy}
+                    aiReady={b.mode === 'demo' || !!key || !!aiBudget?.enabled}
+                    openDo={() => setTab('do')}
+                  />
                 </TabsContent>
                 <TabsContent value="do">
-                  <DoWorkspace key={b.id} b={b} revision={revision} act={act} busy={!!busy} aiReady={b.mode === 'demo' || !!key || !!aiBudget?.enabled} />
+                  <DoWorkspace
+                    key={b.id}
+                    b={b}
+                    revision={revision}
+                    act={act}
+                    busy={!!busy}
+                    aiReady={b.mode === 'demo' || !!key || !!aiBudget?.enabled}
+                  />
                 </TabsContent>
                 <TabsContent value="portfolio">
-                  <PortfolioWorkspace key={`${b.id}:${revision}`} b={b} businesses={businesses} act={act} busy={!!busy} selectBusiness={(id) => { void select(id); }} />
+                  <PortfolioWorkspace
+                    key={`${b.id}:${revision}`}
+                    b={b}
+                    businesses={businesses}
+                    act={act}
+                    busy={!!busy}
+                    selectBusiness={(id) => {
+                      void select(id);
+                    }}
+                  />
                 </TabsContent>
                 <TabsContent value="markets">
-                  <MarketsWorkspace key={`${b.id}:${revision}`} b={b} act={act} busy={!!busy} />
+                  <MarketsWorkspace
+                    key={`${b.id}:${revision}`}
+                    b={b}
+                    act={act}
+                    busy={!!busy}
+                  />
                 </TabsContent>
                 <TabsContent value="today">
-                  <GuidedWorkspace key={`${b.id}:${revision}`} b={b} act={act} busy={!!busy} username={username} revision={revision} />
-                  <details className="more-progress"><summary>Existing tools and plan history</summary><p className="small muted">Older goals and growth rounds remain preserved as historical proposals. They are not approved by this guided flow.</p><Today b={b} act={act} setTab={setTab} queue={queue}/></details>
+                  <GuidedWorkspace
+                    key={`${b.id}:${revision}`}
+                    b={b}
+                    act={act}
+                    busy={!!busy}
+                    username={username}
+                    revision={revision}
+                  />
+                  <details className="more-progress">
+                    <summary>Existing tools and plan history</summary>
+                    <p className="small muted">
+                      Older goals and growth rounds remain preserved as
+                      historical proposals. They are not approved by this guided
+                      flow.
+                    </p>
+                    <Today b={b} act={act} setTab={setTab} queue={queue} />
+                  </details>
                 </TabsContent>
                 <TabsContent value="memory">
                   <Memory key={`${b.id}:${revision}`} b={b} act={act} />
@@ -574,7 +674,7 @@ function Memory({ b, act }: { b: BusinessDocument; act: Act }) {
         </div>
         <div>
           <label htmlFor="profile-notes">Owner notes</label>
-              <Textarea id="profile-notes" rows={6} defaultValue={b.notes} />
+          <Textarea id="profile-notes" rows={6} defaultValue={b.notes} />
         </div>
         <Button
           onClick={() =>
@@ -1181,17 +1281,18 @@ function Connections(p: {
           <p className="eyebrow">SESSION CONNECTIONS</p>
           <h2>Connected services</h2>
           <p className="muted">
-            Use the included shared credits, or paste your own OpenAI API key
-            for this session. Personal keys stay in this tab and are never
-            included in saved business data or charged against shared credits.
+            Auto routing uses DeepSeek for routine work and OpenAI for sourced
+            research and high-judgment planning. You can paste your own OpenAI
+            API key to override shared routing for this session. Personal keys
+            stay in this tab and are never saved.
           </p>
         </div>
         <KeyRound />
       </div>
       <div className="connection-card">
-        <h3>OpenAI</h3>
+        <h3>AI routing</h3>
         <p className="small muted">
-          Live web research and tailored drafts · gpt-5.4-mini
+          DeepSeek Flash for routine work · OpenAI for frontier and web research
         </p>
         {p.sharedAI ? (
           <p className="connected">
@@ -1199,7 +1300,9 @@ function Connections(p: {
             shared balance cannot cover the next run.
           </p>
         ) : null}
-        <label htmlFor="personal-openai-key">Personal OpenAI API key <span className="muted">(optional)</span></label>
+        <label htmlFor="personal-openai-key">
+          Personal OpenAI API key <span className="muted">(optional)</span>
+        </label>
         <Input
           id="personal-openai-key"
           type="password"
