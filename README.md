@@ -14,6 +14,8 @@ The paired local Codex and computer-use runner is a gated beta. See [runner setu
 
 The owner portfolio also supports market-level operating records, so a business can keep campus, city, or segment progress distinct. Bite Club Meal Plan uses this to separate UF evidence from FAU and FSU expansion work while the venture is paused.
 
+Partner view access, category-only network learning, playbooks, and the outreach pipeline are described in [docs/PARTNERS-AND-LEARNING.md](docs/PARTNERS-AND-LEARNING.md). They require migrations 009–011.
+
 ## Public beta and shared AI
 
 Anyone can visit the public URL. People register a unique username with a 4–6 digit PIN to use private, per-account business records. PINs are PBKDF2 hashed with a random per-account salt. Login sessions use hashed opaque tokens in secure HTTP-only cookies, and failed login attempts are throttled per username. Server-held AI keys fund shared routing and are never returned to the browser. Existing personal Google connections remain session-only.

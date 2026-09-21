@@ -370,6 +370,7 @@ export function addObservation(
     source: string;
     actualEffort: string;
     nextDecision: string;
+    verdict?: 'repeat' | 'adjust' | 'drop' | 'unknown';
   },
 ) {
   const endeavor = endeavorFor(business, endeavorId);

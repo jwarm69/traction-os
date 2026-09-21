@@ -1,3 +1,4 @@
+import type { RunnerGrant } from './runner-grant';
 export type RunnerDevice = {
   id: string;
   name: string;
@@ -21,6 +22,7 @@ export type RunnerJob = {
   revision: number;
   executionMode: RunnerExecutionMode;
   goal?: string;
+  grant?: RunnerGrant;
   status: RunnerJobStatus;
   brief?: string;
   result?: unknown;
@@ -48,4 +50,5 @@ export type RunnerClaim = {
   leaseToken: string;
   brief: string;
   goal?: string;
+  grant?: RunnerGrant;
 };
