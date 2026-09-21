@@ -29,6 +29,7 @@ import { buildAgentBrief } from '@/lib/agent-brief';
 import { executionCostLabel, planExecution } from '@/lib/execution-policy';
 import './do-execution.css';
 import RunnerPanel from './runner-panel';
+import PipelinePanel from './pipeline-panel';
 
 type Act = (op: string, extra?: Record<string, unknown>) => Promise<boolean>;
 const statusLabels: Record<EndeavorStatus, string> = {
@@ -153,6 +154,7 @@ export default function DoWorkspace({
     source: '',
     effort: '',
     decision: '',
+    verdict: 'unknown',
   });
   const [now, setNow] = useState(() => Date.now());
   const activeIdeas = (b.explore?.ideas || []).filter(
@@ -351,6 +353,8 @@ export default function DoWorkspace({
             </Button>
           )}
       </div>
+
+      <PipelinePanel b={b} act={act} busy={busy} />
 
       {!!endeavors.length && (
         <div className="do-layout">
@@ -919,6 +923,29 @@ export default function DoWorkspace({
                     }
                     placeholder="What decision follows?"
                   />
+                  <div className="observation-verdict">
+                    <label htmlFor="observation-verdict">
+                      Would you run this approach again?
+                    </label>
+                    <select
+                      id="observation-verdict"
+                      value={observation.verdict}
+                      onChange={(event) =>
+                        setObservation({
+                          ...observation,
+                          verdict: event.target.value,
+                        })
+                      }
+                    >
+                      <option value="repeat">Repeat — I would run this again</option>
+                      <option value="adjust">Adjust — worth running differently</option>
+                      <option value="drop">Drop — I would not run this again</option>
+                      <option value="unknown">Not sure yet</option>
+                    </select>
+                    <p className="small muted">
+                      Your own judgement, not a measured result.
+                    </p>
+                  </div>
                   <Button
                     disabled={
                       busy ||
@@ -936,6 +963,7 @@ export default function DoWorkspace({
                           .filter(Boolean),
                         actualEffort: observation.effort,
                         nextDecision: observation.decision,
+                        verdict: observation.verdict,
                       });
                       if (ok)
                         setObservation({
@@ -944,6 +972,7 @@ export default function DoWorkspace({
                           source: '',
                           effort: '',
                           decision: '',
+                          verdict: 'unknown',
                         });
                     }}
                   >

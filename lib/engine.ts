@@ -264,6 +264,8 @@ export type WorkObservation = {
   source: string;
   actualEffort: string;
   nextDecision: string;
+  /** Owner's judgment of the approach, separate from the observed evidence. */
+  verdict?: 'repeat' | 'adjust' | 'drop' | 'unknown';
 };
 export type Endeavor = {
   id: string;
@@ -307,6 +309,38 @@ export type Market = {
   updatedAt: string;
 };
 export type WorkState = { endeavors: Endeavor[] };
+export type PipelineStage =
+  | 'identified'
+  | 'contacted'
+  | 'replied'
+  | 'conversation'
+  | 'won'
+  | 'lost';
+export type PipelineChannel =
+  | 'email'
+  | 'social'
+  | 'community'
+  | 'referral'
+  | 'other';
+export type PipelineStageEvent = {
+  stage: PipelineStage;
+  at: string;
+  note?: string;
+};
+export type PipelineContact = {
+  id: string;
+  name: string;
+  organization?: string;
+  channel: PipelineChannel;
+  route?: string;
+  endeavorId?: string;
+  stage: PipelineStage;
+  stageHistory: PipelineStageEvent[];
+  source: 'owner' | 'assistant';
+  createdAt: string;
+  updatedAt: string;
+};
+export type PipelineState = { contacts: PipelineContact[] };
 export type BusinessDocument = {
   version: 2;
   id: string;
@@ -322,6 +356,7 @@ export type BusinessDocument = {
   guided?: GuidedFlow;
   explore?: ExploreState;
   work?: WorkState;
+  pipeline?: PipelineState;
   portfolio?: PortfolioState;
   marketLabel?: string;
   markets?: Market[];

@@ -22,6 +22,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import type { BusinessDocument, Fact } from '@/lib/engine';
+import type { Insight } from '@/lib/network';
+import type { Playbook } from '@/lib/playbooks';
 import { ownerQueue } from '@/lib/owner-queue';
 import GuidedWorkspace from './guided-workspace';
 import ExploreWorkspace from './explore-workspace';
@@ -36,6 +38,7 @@ type Summary = {
   mode: string;
   revision: number;
   updatedAt: string;
+  sharedBy?: string;
   portfolio?: BusinessDocument['portfolio'];
   workSummary?: {
     total: number;
@@ -54,6 +57,10 @@ type Res = {
   };
   business: BusinessDocument | null;
   businesses: Summary[];
+  access?: { role: 'owner' | 'viewer'; sharedBy?: string };
+  members?: { memberId: string; username: string }[];
+  network?: { sharing: boolean; insights: Insight[] };
+  playbooks?: Playbook[];
   revision: number;
   error?: string;
   gmail?: { email: string };
@@ -78,12 +85,24 @@ export default function Workspace({ username }: { username: string }) {
     [ga4Token, setGa4] = useState(''),
     [form, setForm] = useState<Record<string, string>>({}),
     [showNew, setShowNew] = useState(false),
-    [gmailAccount, setGmailAccount] = useState('');
+    [gmailAccount, setGmailAccount] = useState(''),
+    [access, setAccess] = useState<Res['access']>(),
+    [members, setMembers] = useState<NonNullable<Res['members']>>([]),
+    [network, setNetwork] = useState<NonNullable<Res['network']>>({
+      sharing: true,
+      insights: [],
+    }),
+    [playbooks, setPlaybooks] = useState<Playbook[]>([]);
+  const viewer = access?.role === 'viewer';
   const accept = (d: Res) => {
     setAiBudget(d.ai);
     setB(d.business);
     setBusinesses(d.businesses || []);
     setRevision(d.revision || 0);
+    setAccess(d.access);
+    setMembers(d.members || []);
+    if (d.network) setNetwork(d.network);
+    if (d.playbooks) setPlaybooks(d.playbooks);
     if (d.business) {
       const url = new URL(window.location.href);
       url.searchParams.set('businessId', d.business.id);
@@ -317,6 +336,12 @@ export default function Workspace({ username }: { username: string }) {
                   fictional.
                 </div>
               )}
+              {viewer && (
+                <div className="demo-banner" role="status">
+                  Shared with you by {access?.sharedBy} to view. Only the owner
+                  can change this business, run AI, or act.
+                </div>
+              )}
               {primaryTab === 'records' && (
                 <section className="records-header">
                   <div>
@@ -333,10 +358,75 @@ export default function Workspace({ username }: { username: string }) {
                       onChange={(event) => void select(event.target.value)}
                     >
                       {businesses.map((item) => (
-                        <option key={item.id} value={item.id}>{item.name}</option>
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                          {item.sharedBy ? ` (shared by ${item.sharedBy})` : ''}
+                        </option>
                       ))}
                     </select>
                   </label>
+                  {!viewer && b.mode !== 'demo' && (
+                    <details className="share-panel">
+                      <summary>
+                        Partners with view access ({members.length})
+                      </summary>
+                      <p>
+                        A partner sees this business only, never your others,
+                        and cannot change it, spend AI credits, or act.
+                      </p>
+                      <ul>
+                        {members.map((member) => (
+                          <li key={member.memberId}>
+                            {member.username}{' '}
+                            <button
+                              type="button"
+                              disabled={!!busy}
+                              onClick={() =>
+                                void act('unshare_business', {
+                                  memberId: member.memberId,
+                                })
+                              }
+                            >
+                              Remove
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                      <form
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void act('share_business', {
+                            username: form.shareUsername,
+                          }).then(
+                            (ok) =>
+                              ok &&
+                              setForm((value) => ({
+                                ...value,
+                                shareUsername: '',
+                              })),
+                          );
+                        }}
+                      >
+                        <input
+                          aria-label="Partner username"
+                          placeholder="Partner's Traction username"
+                          value={form.shareUsername || ''}
+                          onChange={(event) =>
+                            setForm((value) => ({
+                              ...value,
+                              shareUsername: event.target.value,
+                            }))
+                          }
+                        />
+                        <button
+                          type="submit"
+                          disabled={!!busy || !form.shareUsername?.trim()}
+                        >
+                          Share
+                        </button>
+                      </form>
+                    </details>
+                  )}
                   <nav className="records-nav" aria-label="Business records">
                     {records.map(([value, label]) => (
                       <button
@@ -351,6 +441,7 @@ export default function Workspace({ username }: { username: string }) {
                   </nav>
                 </section>
               )}
+              <fieldset className="viewer-lock" disabled={viewer}>
               <Tabs value={tab}>
                 <TabsContent value="command">
                   <CommandCenter
@@ -377,6 +468,9 @@ export default function Workspace({ username }: { username: string }) {
                     busy={!!busy}
                     aiReady={b.mode === 'demo' || !!key || !!aiBudget?.enabled}
                     openDo={() => setTab('do')}
+                    playbooks={playbooks}
+                    network={network}
+                    canShare={!viewer}
                   />
                 </TabsContent>
                 <TabsContent value="do">
@@ -466,6 +560,7 @@ export default function Workspace({ username }: { username: string }) {
                   />
                 </TabsContent>
               </Tabs>
+              </fieldset>
             </>
           )}
       </main>

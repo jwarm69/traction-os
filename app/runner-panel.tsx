@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import type { BusinessDocument, Endeavor } from '@/lib/engine';
 import { executionCostLabel, planExecution } from '@/lib/execution-policy';
+import { MAX_GRANT_STEPS, grantDomain } from '@/lib/runner-grant';
 import './runner-panel.css';
 
 type Device = {
@@ -82,6 +83,8 @@ export default function RunnerPanel({
   const [executionMode, setExecutionMode] = useState<'codex' | 'computer'>(
     'codex',
   );
+  const [grantDomains, setGrantDomains] = useState('');
+  const [grantRoutine, setGrantRoutine] = useState(false);
   const request = useRef(0);
   const inFlight = useRef(false);
   const loading = useRef(false);
@@ -220,13 +223,26 @@ export default function RunnerPanel({
   const desktopRecommended =
     executionPlan?.route === 'codex' || executionPlan?.route === 'computer';
   const run = async (automatic = true) => {
-    if (selected && selectedDevice)
-      await post('queue_job', {
-        endeavorId: selected.id,
-        deviceId: selectedDevice,
-        revision,
-        executionMode: automatic ? 'auto' : executionMode,
-      });
+    if (!selected || !selectedDevice) return;
+    let grant;
+    if (grantRoutine) {
+      try {
+        grant = {
+          domains: grantDomains.split(/[\s,]+/).filter(Boolean).map(grantDomain),
+          steps: MAX_GRANT_STEPS,
+        };
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Invalid domain.');
+        return;
+      }
+    }
+    await post('queue_job', {
+      endeavorId: selected.id,
+      deviceId: selectedDevice,
+      revision,
+      executionMode: automatic ? 'auto' : executionMode,
+      grant,
+    });
   };
   const approval = async (
     job: Job,
@@ -402,6 +418,37 @@ export default function RunnerPanel({
                     ? 'Run with Codex'
                     : 'Use in-app route above'}
               </Button>
+              {(executionPlan?.route === 'computer' ||
+                executionMode === 'computer') && (
+                <fieldset className="runner-grant">
+                  <legend>Plan approval for this Jev job</legend>
+                  <label>
+                    Allowed domains
+                    <input
+                      type="text"
+                      value={grantDomains}
+                      placeholder="example.com, another.com"
+                      onChange={(e) => setGrantDomains(e.target.value)}
+                    />
+                  </label>
+                  <label className="runner-grant-check">
+                    <input
+                      type="checkbox"
+                      checked={grantRoutine}
+                      disabled={!grantDomains.trim()}
+                      onChange={(e) => setGrantRoutine(e.target.checked)}
+                    />
+                    Let Jev type and click ordinary controls on these domains
+                    without asking, for up to {MAX_GRANT_STEPS} steps.
+                  </label>
+                  <p>
+                    Submit, send, publish, pay, delete, sign-in, Return,
+                    navigation, unlabeled buttons, and any other site still
+                    pause for your one-time approval. Leave unchecked to approve
+                    every action.
+                  </p>
+                </fieldset>
+              )}
               <details className="runner-override">
                 <summary>Manual route override</summary>
                 <fieldset className="runner-mode" aria-label="Execution mode">

@@ -16,10 +16,21 @@ runner_workspace=${TRACTION_RUNNER_WORKSPACE:-$HOME/TractionRunner}
 export TYPESAFE_API_KEY=$typesafe_key
 unset typesafe_key
 
-exec /opt/homebrew/bin/node "$project_dir/scripts/traction-runner.mjs" \
-  --server https://traction-os.vercel.app \
-  --pair \
-  --workspace "$runner_workspace" \
-  --name "Jack's Mac" \
-  --enable-computer-use \
+runner_args=(
+  --server https://traction-os.vercel.app
+  --workspace "$runner_workspace"
+  --name "Jack's Mac"
+  --enable-computer-use
   --python "$project_dir/.venv-computer-use/bin/python"
+)
+
+# Reuse the remembered device credential when one is stored; otherwise fall
+# back to a fresh pairing code and remember it for next time.
+if /usr/bin/security find-generic-password -s traction-runner-device \
+  -a https://traction-os.vercel.app >/dev/null 2>&1; then
+  exec /opt/homebrew/bin/node "$project_dir/scripts/traction-runner.mjs" \
+    --resume "${runner_args[@]}"
+fi
+
+exec /opt/homebrew/bin/node "$project_dir/scripts/traction-runner.mjs" \
+  --pair --remember "${runner_args[@]}"

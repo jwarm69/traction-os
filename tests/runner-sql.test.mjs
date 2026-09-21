@@ -22,6 +22,12 @@ async function fixture(t) {
       'utf8',
     ),
   );
+  await client.executeMultiple(
+    readFileSync(
+      new URL('../migrations/009_runner_plan_grant.sql', import.meta.url),
+      'utf8',
+    ),
+  );
   return {
     client,
     runtime: store.withRunnerClient({ RUNNER_ENABLED: 'true' }, client),
@@ -402,6 +408,7 @@ test('computer jobs require an explicitly capable paired device', async (t) => {
   await queued(runtime, capable, {
     executionMode: 'computer',
     goal: 'Open the project.',
+    grant: { domains: ['example.com'], steps: 40 },
   });
   const claim = await store.claimJob(
     runtime,
@@ -410,4 +417,5 @@ test('computer jobs require an explicitly capable paired device', async (t) => {
   );
   assert.equal(claim.job.executionMode, 'computer');
   assert.equal(claim.goal, 'Open the project.');
+  assert.deepEqual(claim.grant, { domains: ['example.com'], steps: 40 });
 });

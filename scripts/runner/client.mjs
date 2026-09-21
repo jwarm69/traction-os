@@ -402,7 +402,7 @@ export class ComputerUseProcess {
     }
     return 'denied';
   }
-  async run(goal, { signal } = {}) {
+  async run(goal, { signal, grant } = {}) {
     if (typeof goal !== 'string' || !goal.trim() || goal.length > 1000)
       throw new Error('Invalid computer-use goal.');
     if (!process.env.TYPESAFE_API_KEY)
@@ -433,7 +433,7 @@ export class ComputerUseProcess {
         '--out',
         path.join(this.workspace, 'computer-use'),
         '--steps',
-        '8',
+        String(grant?.steps || 8),
         '--min-confidence',
         '0.5',
       ],
@@ -477,7 +477,7 @@ export class ComputerUseProcess {
           }
           if (event.type === 'ready' && !ready) {
             ready = true;
-            child.stdin.write(`${JSON.stringify({ goal })}\n`);
+            child.stdin.write(`${JSON.stringify({ goal, grant })}\n`);
           } else if (event.type === 'approval') {
             this.approval(event.id, event.action, controller.signal)
               .then((decision) =>
@@ -600,6 +600,7 @@ export class TractionRunner {
           : claim.brief || job.brief;
       const result = await process.run(input, {
         signal: this.abort.signal,
+        grant: job.executionMode === 'computer' ? claim.grant : undefined,
       });
       if (this.abort.signal.aborted)
         throw new Error('Task stopped before result submission.');

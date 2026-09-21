@@ -78,6 +78,31 @@ import {
 } from '@/lib/execution';
 import { budgetStatus } from '@/lib/ai-budget';
 import { authenticateRequest, type AuthUser as User } from '@/lib/auth';
+import { insightContext, isVerdict } from '@/lib/network';
+import {
+  contribute,
+  networkInsights,
+  setSharing,
+  sharingStatus,
+} from '@/lib/network-store';
+import { playbookIdea, listPlaybooks } from '@/lib/playbooks';
+import {
+  addContact,
+  moveContact,
+  pipelineChannels,
+  pipelineStages,
+  removeContact,
+  reopenContact,
+} from '@/lib/pipeline';
+import {
+  addMember,
+  listMembers,
+  listShared,
+  loadShared,
+  parseSharedId,
+  removeMember,
+  sharedId,
+} from '@/lib/sharing';
 import { runtime } from '@/lib/runtime';
 import { planExecution } from '@/lib/execution-policy';
 // Allow the bounded provider call and its final persistence to finish.
@@ -253,6 +278,17 @@ function legacy(
   addLog(b, 'Imported from the previous workspace format.');
   return b;
 }
+/** Operations that can change an endeavor's category-level shape. */
+const networkOps = new Set([
+  'select_idea',
+  'pursue_idea',
+  'pursue_suggestion',
+  'start_playbook',
+  'prepare_guided_work',
+  'transition_work',
+  'review_artifact',
+  'add_observation',
+]);
 function legacyId(userId: string) {
   let hash = 2166136261;
   for (const byte of new TextEncoder().encode(userId)) {
@@ -261,7 +297,50 @@ function legacyId(userId: string) {
   }
   return `biz_legacy_${(hash >>> 0).toString(16)}`;
 }
+/** View-only partner access: the owner's document, addressed by a shared id the member cannot write to. */
+async function loadSharedView(u: User, id: string) {
+  const target = parseSharedId(id);
+  const row = target
+    ? await loadShared(runtime(), u.id, target.ownerId, target.businessId)
+    : null;
+  if (!target || !row) return null;
+  const business = JSON.parse(row.data) as BusinessDocument;
+  business.id = sharedId(target.ownerId, target.businessId);
+  return {
+    business,
+    revision: row.revision,
+    access: { role: 'viewer' as const, sharedBy: row.sharedBy },
+  };
+}
 async function loadOrImport(u: User, id?: string) {
+  const loaded = await loadOwned(u, id && parseSharedId(id) ? undefined : id);
+  const shared = await listShared(runtime(), u.id);
+  const network = await Promise.all([
+    sharingStatus(runtime(), u.id),
+    networkInsights(runtime()),
+  ])
+    .then(([sharing, insights]) => ({ sharing, insights }))
+    .catch(() => ({ sharing: true, insights: [] }));
+  const businesses = [...loaded.businesses, ...shared];
+  const view =
+    id && parseSharedId(id)
+      ? await loadSharedView(u, id)
+      : !loaded.business && shared[0]
+        ? await loadSharedView(u, shared[0].id)
+        : null;
+  if (view) return { ...loaded, ...view, businesses, network };
+  return {
+    ...loaded,
+    businesses,
+    network,
+    playbooks: listPlaybooks(),
+    access: { role: 'owner' as const },
+    members: loaded.business
+      ? await listMembers(runtime(), u.id, loaded.business.id)
+      : [],
+  };
+}
+async function loadOwned(u: User, id?: string) {
   await importOwnerStarters(runtime(), u);
   const ai = await budgetStatus(runtime());
   let summaries = await listBusinesses(runtime(), u.id);
@@ -404,7 +483,16 @@ export async function POST(req: Request) {
       const gmail = await verifyGmail(txt(x.gmailToken, 4000));
       return out({ ...(await loadOrImport(u)), gmail });
     }
+    if (op === 'set_network_sharing') {
+      await setSharing(runtime(), u.id, x.sharing === true);
+      return out(await loadOrImport(u, id && !parseSharedId(id) ? id : undefined));
+    }
     if (!id) throw Error('Choose a business first.');
+    if (parseSharedId(id))
+      return out(
+        { error: 'This business is shared with you to view. Only its owner can change it.' },
+        403,
+      );
     const row = await loadBusiness(runtime(), u.id, id);
     if (!row) return out({ error: 'Business not found.' }, 404);
     if (x.revision !== row.revision)
@@ -415,6 +503,12 @@ export async function POST(req: Request) {
         },
         409,
       );
+    if (op === 'share_business' || op === 'unshare_business') {
+      if (op === 'share_business')
+        await addMember(runtime(), u.id, id, required(x.username, 40));
+      else await removeMember(runtime(), u.id, id, required(x.memberId, 100));
+      return out(await loadOrImport(u, id));
+    }
     const b = JSON.parse(row.data) as BusinessDocument;
     if (op === 'run_work') {
       const endeavorId = required(x.endeavorId, 100);
@@ -818,7 +912,7 @@ export async function POST(req: Request) {
               runtime(),
               u.id,
               txt(x.key || '', 500),
-              `Run a broad but practical ideation pass for this business. Return {reply,suggestions:[{title,kind,description,audience,outcome}]}, exactly 3 distinct possibilities spanning acquisition, content/creator distribution, or product improvement as appropriate. These are proposals, not evidence or authorized work. Do not invent sources, contacts, partnerships, current capabilities, metrics, prices, or results. Treat each saved market as a distinct operating context; do not blend evidence or progress across markets. Respect confirmed constraints, label unknowns, and favor directions the owner can validate cheaply. Owner emphasis: ${prompt}. Context: ${JSON.stringify({ name: b.name, url: b.url, goal: b.goal, budget: b.budget, notes: b.notes, markets: b.markets || [], facts: b.facts.filter((fact) => fact.status !== 'unreviewed').slice(0, 12), existingIdeas: b.explore?.ideas.slice(0, 12) || [] })}`,
+              `Run a broad but practical ideation pass for this business. Return {reply,suggestions:[{title,kind,description,audience,outcome}]}, exactly 3 distinct possibilities spanning acquisition, content/creator distribution, or product improvement as appropriate. These are proposals, not evidence or authorized work. Do not invent sources, contacts, partnerships, current capabilities, metrics, prices, or results. Treat each saved market as a distinct operating context; do not blend evidence or progress across markets. Respect confirmed constraints, label unknowns, and favor directions the owner can validate cheaply. Owner emphasis: ${prompt}. ${insightContext(await networkInsights(runtime()).catch(() => []))} Context: ${JSON.stringify({ name: b.name, url: b.url, goal: b.goal, budget: b.budget, notes: b.notes, markets: b.markets || [], facts: b.facts.filter((fact) => fact.status !== 'unreviewed').slice(0, 12), existingIdeas: b.explore?.ideas.slice(0, 12) || [] })}`,
             );
       const suggestions = Array.isArray(answer.suggestions)
         ? answer.suggestions.slice(0, 3).map((value) => {
@@ -1010,7 +1104,41 @@ export async function POST(req: Request) {
         source: required(x.source, 1000),
         actualEffort: txt(x.actualEffort || '', 1000),
         nextDecision: required(x.nextDecision, 2000),
+        verdict: isVerdict(x.verdict) ? x.verdict : undefined,
       });
+    } else if (op === 'start_playbook') {
+      const start = playbookIdea(b, required(x.playbookId, 60), {
+        audience: txt(x.audience || '', 300) || undefined,
+      });
+      const idea = createIdea(b, start.idea);
+      const endeavor = selectIdea(b, idea.id, start.brief);
+      for (const item of start.checklist) addChecklistItem(b, endeavor.id, item);
+    } else if (op === 'add_contact') {
+      const channel = txt(x.channel || 'other', 20);
+      addContact(b, {
+        name: required(x.name, 120),
+        organization: txt(x.organization || '', 120) || undefined,
+        channel: (pipelineChannels as string[]).includes(channel)
+          ? (channel as (typeof pipelineChannels)[number])
+          : 'other',
+        route: txt(x.route || '', 500) || undefined,
+        endeavorId: txt(x.endeavorId || '', 100) || undefined,
+        source: 'owner',
+        note: txt(x.note || '', 500) || undefined,
+      });
+    } else if (op === 'move_contact') {
+      const stage = required(x.stage, 20);
+      if (!(pipelineStages as string[]).includes(stage)) throw Error('Unknown stage.');
+      moveContact(
+        b,
+        required(x.contactId, 100),
+        stage as (typeof pipelineStages)[number],
+        txt(x.note || '', 500) || undefined,
+      );
+    } else if (op === 'reopen_contact') {
+      reopenContact(b, required(x.contactId, 100), required(x.note, 500));
+    } else if (op === 'remove_contact') {
+      removeContact(b, required(x.contactId, 100));
     } else if (op === 'set_portfolio') {
       const priority = String(x.priority);
       if (!['now', 'next', 'maintain', 'paused'].includes(priority))
@@ -1738,6 +1866,8 @@ export async function POST(req: Request) {
         { error: 'Another action finished first. Reload to see it.' },
         409,
       );
+    if (networkOps.has(op))
+      await contribute(runtime(), u.id, b).catch(() => {});
     return out({ ...(await loadOrImport(u, id)), revision: rev });
   } catch (e) {
     console.error('operation failed', e);

@@ -1,6 +1,6 @@
 import { authenticateRequest } from '@/lib/auth';
 import { loadBusiness, updateBusinessData } from '@/lib/turso';
-import { importRunnerResult } from '@/lib/work';
+import { activeArtifact, importRunnerResult } from '@/lib/work';
 import { buildAgentBrief } from '@/lib/agent-brief';
 import { runtime, type Runtime } from '@/lib/runtime';
 import {
@@ -19,9 +19,31 @@ import {
   completedJobTarget,
   decideApproval,
 } from '@/lib/runner-store';
-import type { BusinessDocument } from '@/lib/engine';
+import type { BusinessDocument, Endeavor } from '@/lib/engine';
 import { planExecution } from '@/lib/execution-policy';
+import { parseGrant } from '@/lib/runner-grant';
 
+/**
+ * The runner accepts at most 1,000 characters. Lead with the task, then give the
+ * most recently owner-reviewed artifact whatever room remains so Jev types the
+ * approved copy instead of improvising. Unreviewed drafts are never included.
+ */
+function computerGoal(endeavor: Endeavor) {
+  const task = [
+    endeavor.title.slice(0, 120),
+    endeavor.description.slice(0, 220),
+    `Done when: ${endeavor.completionCriteria.slice(0, 160)}`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const reviewed = endeavor.artifacts
+    .filter((item) => item.reviewedAt)
+    .sort((a, b) => (b.reviewedAt || '').localeCompare(a.reviewedAt || ''))[0];
+  const copy = reviewed && activeArtifact(reviewed)?.content.trim();
+  if (!copy) return task.slice(0, 1000);
+  const lead = `${task}\nUse this owner-reviewed copy exactly; do not invent text:\n`;
+  return (lead + copy).slice(0, 1000);
+}
 /**
  * Return a completed job's text to its endeavor as an unreviewed artifact.
  * The job row stays the source of truth; a failed import never fails the job.
@@ -264,16 +286,7 @@ export async function POST(req: Request) {
       const brief = buildAgentBrief(business, endeavor);
       if (brief.length > 50_000) throw Error('Brief is too large.');
       const goal =
-        executionMode === 'computer'
-          ? [
-              endeavor.title,
-              endeavor.description,
-              `Done when: ${endeavor.completionCriteria}`,
-            ]
-              .filter(Boolean)
-              .join('\n')
-              .slice(0, 1000)
-          : undefined;
+        executionMode === 'computer' ? computerGoal(endeavor) : undefined;
       return out(
         await queueJob(r, u.id, {
           businessId,
@@ -283,6 +296,7 @@ export async function POST(req: Request) {
           brief,
           executionMode,
           goal,
+          grant: executionMode === 'computer' ? parseGrant(x.grant) : undefined,
         }),
         201,
       );

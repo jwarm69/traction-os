@@ -23,6 +23,10 @@ import type {
   MarketingIdea,
 } from '@/lib/engine';
 import { ideaKinds } from '@/lib/explore';
+import type { Insight } from '@/lib/network';
+import type { Playbook } from '@/lib/playbooks';
+import PlaybookPicker from './playbook-picker';
+import NetworkPanel from './network-panel';
 
 type Act = (op: string, extra?: Record<string, unknown>) => Promise<boolean>;
 type Draft = {
@@ -93,12 +97,18 @@ export default function ExploreWorkspace({
   busy,
   aiReady,
   openDo,
+  playbooks,
+  network,
+  canShare,
 }: {
   b: BusinessDocument;
   act: Act;
   busy: boolean;
   aiReady: boolean;
   openDo: () => void;
+  playbooks: Playbook[];
+  network: { sharing: boolean; insights: Insight[] };
+  canShare: boolean;
 }) {
   const ideas = b.explore?.ideas || [];
   const messages = b.explore?.messages || [];
@@ -289,6 +299,20 @@ export default function ExploreWorkspace({
           </div>
         </div>
       </div>
+
+      <PlaybookPicker
+        playbooks={playbooks}
+        act={act}
+        busy={busy}
+        openDo={openDo}
+      />
+
+      <NetworkPanel
+        network={network}
+        canShare={canShare}
+        act={act}
+        busy={busy}
+      />
 
       <div className="saved-directions-heading">
         <div><p className="eyebrow">SAVED DIRECTIONS</p><h3>Ideas worth keeping visible</h3></div>

@@ -2,7 +2,9 @@
 
 The upstream package owns perception and deterministic actions. This adapter
 intercepts every proposed action before it reaches macOS and asks the paired
-Traction session for a one-time decision over a JSON-lines protocol.
+Traction session for a one-time decision over a JSON-lines protocol. An owner
+plan grant (see grant_policy.py) removes the prompt only for routine steps on
+the domains named for this job.
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ import os
 import sys
 from pathlib import Path
 
+from grant_policy import MAX_GRANT_STEPS, auto_allowed, parse_grant
 from typesafe_computer_use import config, macos, runner
 from typesafe_computer_use.actions import Context
 from typesafe_computer_use.writer import make_writer
@@ -56,7 +59,7 @@ def main() -> int:
     parser.add_argument("--min-confidence", type=float, default=0.5)
     parser.add_argument("--delay", type=float, default=2.0)
     args = parser.parse_args()
-    if not 1 <= args.steps <= 12 or not 0.4 <= args.min_confidence <= 1:
+    if not 1 <= args.steps <= MAX_GRANT_STEPS or not 0.4 <= args.min_confidence <= 1:
         raise SystemExit("invalid computer-use limits")
     if not os.environ.get("TYPESAFE_API_KEY"):
         raise SystemExit("TYPESAFE_API_KEY is required on the paired Mac")
@@ -66,9 +69,13 @@ def main() -> int:
     emit({"type": "ready"})
     first = sys.stdin.readline()
     try:
-        goal = json.loads(first)["goal"]
+        initial = json.loads(first)
+        goal = initial["goal"]
     except Exception as exc:
         raise SystemExit("invalid initial goal") from exc
+    grant = parse_grant(initial.get("grant"))
+    if not grant and args.steps > 12:
+        raise SystemExit("extended steps require an owner plan grant")
     if not isinstance(goal, str) or not goal.strip() or len(goal) > 1000:
         raise SystemExit("invalid initial goal")
 
@@ -81,7 +88,7 @@ def main() -> int:
         sequence += 1
         action = preview(decision, screen, items)
         action_id = f"action_{sequence}"
-        if decision.chosen not in SAFE_ACTIONS:
+        if decision.chosen not in SAFE_ACTIONS and not auto_allowed(action, grant):
             emit({"type": "approval", "id": action_id, "action": action})
             response = sys.stdin.readline()
             try:

@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { createClient, type Client } from '@libsql/client/web';
 import type { Runtime } from './runtime';
+import type { RunnerGrant } from './runner-grant';
 import type {
   ApprovalEvent,
   RunnerClaim,
@@ -57,6 +58,7 @@ const rowJob = (x: any): RunnerJob => ({
   revision: Number(x.revision),
   executionMode: x.execution_mode === 'computer' ? 'computer' : 'codex',
   goal: x.goal ? str(x.goal) : undefined,
+  grant: x.grant_json ? parse(x.grant_json) : undefined,
   status: x.status,
   brief: str(x.brief),
   result: x.result_json ? parse(x.result_json) : undefined,
@@ -252,6 +254,7 @@ export async function queueJob(
     brief: string;
     executionMode?: 'codex' | 'computer';
     goal?: string;
+    grant?: RunnerGrant;
   },
 ) {
   const c = db(r),
@@ -272,7 +275,7 @@ export async function queueJob(
     )
       throw Error('This device was not paired with computer use enabled.');
     const inserted = await c.execute({
-      sql: "INSERT INTO runner_jobs(id,owner_id,business_id,endeavor_id,device_id,revision,brief,status,created_at,execution_mode,goal) SELECT ?,?,?,?,?,?,?,'queued',?,?,? WHERE EXISTS (SELECT 1 FROM runner_devices WHERE id=? AND owner_id=? AND revoked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM runner_jobs WHERE owner_id=? AND business_id=? AND endeavor_id=? AND status IN ('queued','claimed'))",
+      sql: "INSERT INTO runner_jobs(id,owner_id,business_id,endeavor_id,device_id,revision,brief,status,created_at,execution_mode,goal,grant_json) SELECT ?,?,?,?,?,?,?,'queued',?,?,?,? WHERE EXISTS (SELECT 1 FROM runner_devices WHERE id=? AND owner_id=? AND revoked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM runner_jobs WHERE owner_id=? AND business_id=? AND endeavor_id=? AND status IN ('queued','claimed'))",
       args: [
         jobId,
         ownerId,
@@ -284,6 +287,7 @@ export async function queueJob(
         t,
         mode,
         input.goal || null,
+        mode === 'computer' && input.grant ? JSON.stringify(input.grant) : null,
         input.deviceId,
         ownerId,
         ownerId,
@@ -348,6 +352,7 @@ export async function claimJob(
           leaseToken: token,
           brief: str(x.brief),
           goal: x.goal ? str(x.goal) : undefined,
+          grant: x.grant_json ? parse(x.grant_json) : undefined,
         }
       : null;
   } finally {
