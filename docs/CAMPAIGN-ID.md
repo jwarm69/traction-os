@@ -103,6 +103,10 @@ Add `campaignAssetName(code, angle, format, version)` returning `${code}_${slug(
 - `import_csv`: `parseSignalsCsv` in `lib/csv.ts` accepts two new optional columns, `campaign` (a campaign code, not an id, since owners will type it) and `campaign_metric`. The route resolves the code to an endeavor id and rejects the whole import on an unknown code or metric, matching the existing "reject the entire import on bad data" rule. Add fixture rows to `tests/csv.test.mjs`.
 - `import_ga4` is unchanged. GA4 key events must never be auto-classified as `leads` or `deals`; the README forbids it.
 
+### Legacy round experiments
+
+Traction has two experiment identities: `Experiment` records inside `rounds`, and endeavors of kind `experiment` created from guided proposals. This slice adds only an optional `endeavorId` to the legacy record. A round experiment that nobody links stays outside the campaign table and outside the weekly memo, by design. The roadmap's "one consistent experiment identity" item is the place to collapse the two; doing it here would widen a data-model slice into a migration of every existing round. The Rounds tab should show an "unlinked" marker on experiments without an `endeavorId` so the gap is visible rather than silent.
+
 ## The campaign table (`lib/campaigns.ts`, new)
 
 Pure functions over a `BusinessDocument`. No I/O, no AI.

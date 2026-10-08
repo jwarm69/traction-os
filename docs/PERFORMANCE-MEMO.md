@@ -58,6 +58,8 @@ export type Endeavor = {
 
 The existing free-text `completionCriteria` stays. The bar does not replace it; the bar is the subset that can be computed.
 
+Seeding from a guided proposal: `prepareGuidedProposal` in `lib/work.ts` already turns `successRule`, `stoppingRule`, `cost`, and `timeWindow` into free text on the endeavor. It should also attempt a bar from them: parse a leading number and a known metric word from `successRule` into `successMetric` and `successTarget`, a currency amount from `cost` into `maxSpend`, and a day or week count from `timeWindow` into `maxDays`. Store the result as a proposed bar with `setAt` empty. The memo treats a bar without `setAt` as absent (verdict `wait`, reason "Confirm the proposed evidence bar"), and the Do workspace shows the proposal pre-filled for one-click confirmation. Parsing failures leave the field empty and never guess. This is what makes the marketing test kind the one path that runs end to end without the owner re-typing numbers the proposal already contained.
+
 ### Memo (`lib/engine.ts`)
 
 ```ts
