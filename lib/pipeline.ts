@@ -169,7 +169,11 @@ export function addContact(
   const route = httpsRoute(input.route);
   if (route) contact.route = route;
   const endeavorId = optionalText(input.endeavorId, MAX_NAME, 'Endeavor id');
-  if (endeavorId) contact.endeavorId = endeavorId;
+  if (endeavorId) {
+    if (!(business.work?.endeavors || []).some((item) => item.id === endeavorId))
+      throw Error('Endeavor not found.');
+    contact.endeavorId = endeavorId;
+  }
 
   state.contacts.unshift(contact);
   addLog(business, `Pipeline contact added: ${contact.name}.`);

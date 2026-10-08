@@ -147,6 +147,42 @@ try {
     query: 'Find one fictional demo candidate.',
   });
   assert.equal(current.work.endeavors[0].research.length, 2);
+  // Campaign ID round trip: the endeavor carries a code, a classified signal
+  // joins to it, and half a classification is rejected.
+  const code = current.work.endeavors[0].code;
+  assert.match(code, /^[A-Z]{2,3}\d{3}$/);
+  await act('add_signal', {
+    metric: 'Ad spend',
+    value: 120,
+    period: 'Integration period',
+    source: 'Integration test',
+    endeavorId,
+    campaignMetric: 'spend',
+  });
+  const classified = current.signals.at(-1);
+  assert.equal(classified.endeavorId, endeavorId);
+  assert.equal(classified.campaignMetric, 'spend');
+  await act(
+    'add_signal',
+    { metric: 'Half', value: 1, period: 'P', endeavorId },
+    400,
+  );
+  await act(
+    'import_csv',
+    {
+      csv: `metric,value,period,campaign,campaign_metric\nAd spend,30,P,${code},spend\nSessions,5,P,,`,
+      fileName: 'campaign.csv',
+    },
+  );
+  assert.equal(
+    current.signals.filter((s) => s.endeavorId === endeavorId && s.campaignMetric === 'spend').length,
+    2,
+  );
+  await act(
+    'import_csv',
+    { csv: 'metric,value,period,campaign,campaign_metric\nAd spend,30,P,ZZZ999,spend' },
+    400,
+  );
   await act('transition_work', { endeavorId, status: 'completed' });
   await act('set_portfolio', {
     priority: 'now',

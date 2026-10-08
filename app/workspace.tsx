@@ -21,7 +21,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
-import type { BusinessDocument, Fact } from '@/lib/engine';
+import { campaignMetrics, type BusinessDocument, type Fact } from '@/lib/engine';
+import { campaignMetricLabels } from '@/lib/campaigns';
 import type { Insight } from '@/lib/network';
 import type { Playbook } from '@/lib/playbooks';
 import { ownerQueue } from '@/lib/owner-queue';
@@ -869,6 +870,7 @@ function Signals({
   form: FormState;
   setForm: SetForm;
 }) {
+  const endeavors = b.work?.endeavors || [];
   return (
     <section className="panel">
       <div className="section-title">
@@ -904,7 +906,43 @@ function Signals({
           value={form.source || ''}
           onChange={(e) => setForm({ ...form, source: e.target.value })}
         />
+        {!!endeavors.length && (
+          <select
+            aria-label="Campaign (optional)"
+            value={form.signalEndeavorId || ''}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                signalEndeavorId: e.target.value,
+                signalMetric: e.target.value ? form.signalMetric || '' : '',
+              })
+            }
+          >
+            <option value="">No campaign</option>
+            {endeavors.map((endeavor) => (
+              <option key={endeavor.id} value={endeavor.id}>
+                {endeavor.code ? `${endeavor.code} · ` : ''}
+                {endeavor.title}
+              </option>
+            ))}
+          </select>
+        )}
+        {!!form.signalEndeavorId && (
+          <select
+            aria-label="Campaign metric"
+            value={form.signalMetric || ''}
+            onChange={(e) => setForm({ ...form, signalMetric: e.target.value })}
+          >
+            <option value="">Choose a campaign metric</option>
+            {campaignMetrics.map((metric) => (
+              <option key={metric} value={metric}>
+                {campaignMetricLabels[metric]}
+              </option>
+            ))}
+          </select>
+        )}
         <Button
+          disabled={!!form.signalEndeavorId && !form.signalMetric}
           onClick={() =>
             act('add_signal', {
               metric: form.metric,
@@ -912,6 +950,8 @@ function Signals({
               period: form.period,
               source: form.source,
               note: '',
+              endeavorId: form.signalEndeavorId || undefined,
+              campaignMetric: form.signalMetric || undefined,
             })
           }
         >
@@ -921,13 +961,16 @@ function Signals({
       <details>
         <summary>Import CSV</summary>
         <p className="small muted">
-          Columns: metric, value, period, note. Up to 200 rows.
+          Columns: metric, value, period, note, source. Optional: campaign (a
+          campaign code such as {endeavors[0]?.code || 'CMP001'}) and
+          campaign_metric ({campaignMetrics.join(', ')}). Use both or neither.
+          An unknown code rejects the whole file. Up to 200 rows.
         </p>
         <Textarea
           value={form.csv || ''}
           onChange={(e) => setForm({ ...form, csv: e.target.value })}
           placeholder={
-            'metric,value,period,note\nQualified calls,3,August,CRM export'
+            'metric,value,period,note,campaign,campaign_metric\nAd spend,250,August,Meta export,CMP001,spend'
           }
         />
         <Button
@@ -951,7 +994,12 @@ function Signals({
               <strong>{s.value}</strong>
               <span>
                 {s.metric}
-                <small>{s.period}</small>
+                <small>
+                  {s.period}
+                  {s.endeavorId && s.campaignMetric
+                    ? ` · ${endeavors.find((item) => item.id === s.endeavorId)?.code || 'campaign'} ${s.campaignMetric}`
+                    : ''}
+                </small>
               </span>
               <span>
                 {s.source}
@@ -977,6 +1025,7 @@ function Rounds({
   form: FormState;
   setForm: SetForm;
 }) {
+  const endeavors = b.work?.endeavors || [];
   return (
     <section className="panel">
       <div className="section-title">
@@ -1024,17 +1073,46 @@ function Rounds({
                   <p className="experiment-action">{e.action}</p>
                   <small>
                     Target: {e.target} {e.metric.toLowerCase()}
+                    {' · '}
+                    {e.endeavorId
+                      ? `Campaign ${endeavors.find((item) => item.id === e.endeavorId)?.code || 'linked'}`
+                      : 'Unlinked: not in the campaign table'}
                   </small>
                 </div>
                 {e.status === 'draft' && r.status !== 'complete' && (
-                  <Button
-                    size="sm"
-                    onClick={() =>
-                      act('start_experiment', { experimentId: e.id })
-                    }
-                  >
-                    Start
-                  </Button>
+                  <div className="result-entry">
+                    {!!endeavors.length && (
+                      <select
+                        aria-label="Link to campaign (optional)"
+                        id={`endeavor-${e.id}`}
+                        defaultValue=""
+                      >
+                        <option value="">No campaign link</option>
+                        {endeavors.map((endeavor) => (
+                          <option key={endeavor.id} value={endeavor.id}>
+                            {endeavor.code ? `${endeavor.code} · ` : ''}
+                            {endeavor.title}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        act('start_experiment', {
+                          experimentId: e.id,
+                          endeavorId:
+                            (
+                              document.querySelector(
+                                `#endeavor-${e.id}`,
+                              ) as HTMLSelectElement | null
+                            )?.value || undefined,
+                        })
+                      }
+                    >
+                      Start
+                    </Button>
+                  </div>
                 )}
                 {e.status === 'draft' && r.status === 'complete' && (
                   <span className="pill">Not run</span>

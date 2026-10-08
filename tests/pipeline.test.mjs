@@ -337,3 +337,16 @@ await test('a contacted count survives the contact moving on, so rates use histo
   assert.equal(summary.replied, 5);
   assert.equal(summary.replyRate, 1);
 });
+
+await test('a contact may only link to an endeavor that exists', () => {
+  const business = demoBusiness();
+  assert.throws(() => addContact(business, owner({ endeavorId: 'work_missing' })), /Endeavor not found/);
+  business.work = {
+    endeavors: [{ id: 'work_1', code: 'CMP001', title: 'Real', kind: 'outreach', description: '',
+      intendedDeliverables: [], effortBudget: '', completionCriteria: '', status: 'preparing',
+      checklist: [], artifacts: [], research: [], observations: [],
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }],
+  };
+  assert.equal(addContact(business, owner({ endeavorId: 'work_1' })).endeavorId, 'work_1');
+  assert.equal('endeavorId' in addContact(business, owner({ endeavorId: '  ' })), false);
+});

@@ -20,3 +20,18 @@ await test('CSV rejects invalid rows atomically and does not turn unknowns into 
     assert.throws(() => parseSignalsCsv(csv));
   assert.equal(parseSignalsCsv('metric,value,period\nLeads,0,Sep')[0].value, 0);
 });
+await test('CSV campaign columns parse as a pair and reject unknown metrics', () => {
+  const rows = parseSignalsCsv(
+    'metric,value,period,campaign,campaign_metric\nAd spend,250,Aug,cmp001,Spend\nSessions,9,Aug,,',
+  );
+  assert.equal(rows[0].campaign, 'CMP001');
+  assert.equal(rows[0].campaignMetric, 'spend');
+  assert.equal('campaign' in rows[1], false);
+  for (const csv of [
+    'metric,value,period,campaign,campaign_metric\nAd spend,250,Aug,CMP001,',
+    'metric,value,period,campaign,campaign_metric\nAd spend,250,Aug,,spend',
+    'metric,value,period,campaign,campaign_metric\nAd spend,250,Aug,CMP001,clicks',
+    'metric,value,period,campaign,campaign_metric\nAd spend,250,Aug,THISCODEISTOOLONG,spend',
+  ])
+    assert.throws(() => parseSignalsCsv(csv), /campaign/);
+});

@@ -24,7 +24,12 @@ import type {
   EndeavorStatus,
   ExecutionRun,
 } from '@/lib/engine';
-import { activeArtifact, sourceIdeaChanged } from '@/lib/work';
+import {
+  activeArtifact,
+  campaignAssetName,
+  campaignLink,
+  sourceIdeaChanged,
+} from '@/lib/work';
 import { buildAgentBrief } from '@/lib/agent-brief';
 import { executionCostLabel, planExecution } from '@/lib/execution-policy';
 import './do-execution.css';
@@ -243,6 +248,30 @@ export default function DoWorkspace({
   };
   const copy = async (content: string) =>
     navigator.clipboard.writeText(content);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const campaignUrl = (() => {
+    if (!selected?.code) return null;
+    try {
+      return campaignLink(b.url, selected.code);
+    } catch {
+      return null;
+    }
+  })();
+  const copyCampaignLink = async () => {
+    if (!campaignUrl) return;
+    await copy(campaignUrl);
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 1500);
+  };
+  const suggestedAssetName =
+    selected?.code && (artifactKind === 'content' || artifactKind === 'outreach')
+      ? campaignAssetName(
+          selected.code,
+          artifactTitle || selected.title,
+          artifactKind,
+          (artifact?.versions.length || 0) + 1,
+        )
+      : null;
   const download = (title: string, content: string) => {
     const url = URL.createObjectURL(
       new Blob([content], { type: 'text/markdown' }),
@@ -377,8 +406,24 @@ export default function DoWorkspace({
                   <span className={`idea-status ${selected.status}`}>
                     {statusLabels[selected.status]}
                   </span>
+                  {selected.code && (
+                    <span className="pill campaign-code" title="Campaign code">
+                      {selected.code}
+                    </span>
+                  )}
                   <h2>{selected.title}</h2>
                 </div>
+                {campaignUrl && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={copyCampaignLink}
+                    title={campaignUrl}
+                  >
+                    {linkCopied ? <Check size={14} /> : <Copy size={14} />}{' '}
+                    {linkCopied ? 'Copied' : 'Copy campaign link'}
+                  </Button>
+                )}
               </div>
               <p>{selected.description}</p>
               {sourceIdeaChanged(b, selected) && (
@@ -633,6 +678,18 @@ export default function DoWorkspace({
                     onChange={(event) => setArtifactTitle(event.target.value)}
                     placeholder="Artifact title"
                   />
+                  {suggestedAssetName && artifactTitle !== suggestedAssetName && (
+                    <p className="small muted">
+                      Suggested asset name:{' '}
+                      <button
+                        type="button"
+                        className="link-button"
+                        onClick={() => setArtifactTitle(suggestedAssetName)}
+                      >
+                        {suggestedAssetName}
+                      </button>
+                    </p>
+                  )}
                   <Textarea
                     value={artifactContent}
                     onChange={(event) => setArtifactContent(event.target.value)}

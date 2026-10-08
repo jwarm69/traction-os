@@ -9,12 +9,32 @@ export type Fact = Provenance & {
   value: string;
   status: 'unreviewed' | 'confirmed' | 'corrected';
 };
+/** Closed vocabulary for campaign-level measurements. Free-text metric stays free. */
+export type CampaignMetric =
+  | 'spend'
+  | 'leads'
+  | 'qualified'
+  | 'deals'
+  | 'revenue'
+  | 'churned';
+export const campaignMetrics: CampaignMetric[] = [
+  'spend',
+  'leads',
+  'qualified',
+  'deals',
+  'revenue',
+  'churned',
+];
 export type Signal = Provenance & {
   id: string;
   metric: string;
   value: number;
   period: string;
   note: string;
+  /** Campaign this measurement belongs to. Absent means business-level. */
+  endeavorId?: string;
+  /** Only signals with both endeavorId and campaignMetric count in the campaign table. */
+  campaignMetric?: CampaignMetric;
 };
 export type Diagnosis = {
   bottleneck: string;
@@ -36,6 +56,8 @@ export type Experiment = {
   result?: number;
   evidence?: string;
   learning?: string;
+  /** Links a legacy round experiment to the endeavor it belongs to. Optional, owner-set. */
+  endeavorId?: string;
 };
 export type ExperimentProposal = Pick<
   Experiment,
@@ -95,6 +117,7 @@ export type Prospect = {
   lastReplyAt?: string | null;
   snippets?: string[];
   error?: string;
+  endeavorId?: string;
 };
 export type OutreachDraft = {
   prospectId: string;
@@ -269,6 +292,8 @@ export type WorkObservation = {
 };
 export type Endeavor = {
   id: string;
+  /** Short immutable campaign code, unique within the business, e.g. "AG003". */
+  code: string;
   sourceIdeaId?: string;
   sourceGuidedProposalId?: string;
   sourceIdeaSnapshot?: MarketingIdea;
@@ -308,7 +333,11 @@ export type Market = {
   nextMove: string;
   updatedAt: string;
 };
-export type WorkState = { endeavors: Endeavor[] };
+export type WorkState = {
+  endeavors: Endeavor[];
+  /** Next sequence number for campaign codes. Never decremented, never reused. */
+  nextCampaignNumber?: number;
+};
 export type PipelineStage =
   | 'identified'
   | 'contacted'
