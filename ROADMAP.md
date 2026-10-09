@@ -12,6 +12,8 @@ The first useful outcome is a real experiment prepared for execution, with a usa
 
 Product loop: understand → ideate → research → choose → prepare → authorize → execute → verify → measure → decide.
 
+Direction update, October 8, 2026: Traction is being adapted into the system a marketing engineer would otherwise build by hand over 90 days, with the review and spend boundaries already in place. The adaptation is a sequence of designed, unbuilt steps indexed in [docs/MARKETING-ENGINEER-ROADMAP.md](docs/MARKETING-ENGINEER-ROADMAP.md): campaign codes, a customer language agent, a weekly performance memo, a campaign brief skill, a knowledge library, a run record, and a paired agent connection. It does not change the first customer hypothesis or the pilot gate below; it adds the owner acting as their own marketing engineer as the person the loop serves.
+
 Success means less owner work and better supported decisions. A listing submission or sent email is an execution result; a qualified conversation or activated customer is a business outcome. Neither implies the other.
 
 ## Explore, Do, and Portfolio

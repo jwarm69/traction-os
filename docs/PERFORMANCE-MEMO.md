@@ -158,6 +158,7 @@ Steps:
 4. **Propose a verdict** with the rules below.
 5. **Write the reason** from a template that interpolates the actual numbers. No adjectives. "Spent 1,400 of 2,000; 3 conversations against a target of 5; day 9 of 14."
 6. **Carry caveats** from the campaign row's `unknowns`, plus memo-level ones: "Spend was entered by owner, not synced." "Revenue here is signal-classified; no deals are recorded in the pipeline." "The evidence bar was changed on <date>."
+   Amendment from [MARKETING-ENGINEER-ROADMAP.md](MARKETING-ENGINEER-ROADMAP.md): when the bar has both `maxSpend` and `maxDays` and at least three days have elapsed, project spend at the cumulative daily rate; if the projected exhaustion day is before `maxDays`, add "On pace to reach the spend limit on day N of M." It is a caveat and never changes the verdict.
 7. **Summarize.** Count by proposed verdict, name the single campaign with the lowest cost per conversation if two or more have one, and state how many lines are waiting on the bar.
 
 ### Verdict rules

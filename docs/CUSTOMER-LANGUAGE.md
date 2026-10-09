@@ -112,6 +112,8 @@ Reports hold quotes and role labels only. No names, companies, or contact detail
 
 `standingCorrections` is Greg's "fix the instruction and save the fix in decisions/ so it sticks." Each run's prompt includes them verbatim. Examples the UI should suggest: "Do not treat the owner's own words as customer language." "Group pricing and billing complaints under one theme." "Ignore the chatty customer in source X when counting."
 
+Amendment from [MARKETING-ENGINEER-ROADMAP.md](MARKETING-ENGINEER-ROADMAP.md): standing corrections become the business-level `corrections` list defined in step 5, with scope `customer_language` for the entries this report type uses. Report runs read scope `customer_language` plus `all`. `promote_phrase` also sets `category: 'customer_language'` on the fact it creates. `EvidenceState` keeps only `languageReports`.
+
 ## Redaction before storage
 
 Deterministic, in `lib/evidence.ts`, applied in the upload op before the row is written:
