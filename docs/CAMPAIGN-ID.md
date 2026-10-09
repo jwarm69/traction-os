@@ -151,6 +151,7 @@ Rules:
 - `MIN_DENOMINATOR` (5) from `lib/pipeline.ts` gates every ratio. Below it, the ratio is null and `unknowns` says why.
 - `conversations` is the pipeline count. `qualified` is an owner-classified signal. They are different things and both appear; do not merge them.
 - `lastEvidenceAt` is the latest `observedAt` across contributing signals, contact stage events, and endeavor observations.
+- Amendment from [MARKETING-ENGINEER-ROADMAP.md](MARKETING-ENGINEER-ROADMAP.md): add `stale: boolean`, true for an `in_progress` endeavor whose `lastEvidenceAt` is null or older than `STALE_EVIDENCE_DAYS` (14), rendered as "stale since <date>"; and let `campaignRow` take an optional `{ since, until }` filter on signal `observedAt` and stage event timestamps, which step 3 needs.
 - Sort `campaignTable` by endeavor status (in_progress, ready, preparing, blocked, completed, stopped) then `createdAt` descending.
 
 ## API surface (`app/api/workspace/route.ts`)

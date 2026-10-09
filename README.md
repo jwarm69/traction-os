@@ -2,7 +2,7 @@
 
 ## Product roadmap
 
-See [ROADMAP.md](ROADMAP.md) for the short- and long-term product milestones, release gates, and operating assumptions. [Initial slices for Sol](docs/INITIAL-SLICES.md) records the implemented S1–S6 foundation and its acceptance evidence. [Sprint 01](docs/SPRINT-01.md) supplies supporting lifecycle requirements. Later roadmap items remain planned work.
+See [ROADMAP.md](ROADMAP.md) for the short- and long-term product milestones, release gates, and operating assumptions. [Initial slices for Sol](docs/INITIAL-SLICES.md) records the implemented S1–S6 foundation and its acceptance evidence. [Sprint 01](docs/SPRINT-01.md) supplies supporting lifecycle requirements. Later roadmap items remain planned work. The marketing-engineer adaptation is designed, not built: [the map and steps 4–7](docs/MARKETING-ENGINEER-ROADMAP.md) index the [campaign ID](docs/CAMPAIGN-ID.md), [customer language](docs/CUSTOMER-LANGUAGE.md), and [performance memo](docs/PERFORMANCE-MEMO.md) designs.
 
 The current product has three owner modes. Explore keeps ideas and durable human/AI discussion. Do freezes a selected direction, produces versioned artifacts, keeps sourced research inspectable, and records external observations without confusing drafts with outcomes. Portfolio shows priority, owner-time commitment, active/blocked work, and latest learning across businesses.
 
