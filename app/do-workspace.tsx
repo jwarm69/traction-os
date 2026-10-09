@@ -33,6 +33,7 @@ import {
 import { buildAgentBrief } from '@/lib/agent-brief';
 import { contextPack } from '@/lib/knowledge';
 import { campaignBrief, parseCampaignBriefData } from '@/lib/skills';
+import { campaignMetrics, type EvidenceBar } from '@/lib/engine';
 import { executionCostLabel, planExecution } from '@/lib/execution-policy';
 import './do-execution.css';
 import RunnerPanel from './runner-panel';
@@ -266,6 +267,30 @@ export default function DoWorkspace({
   const [correctionText, setCorrectionText] = useState('');
   const knowledge = useMemo(() => contextPack(b), [b]);
   const [audienceDraft, setAudienceDraft] = useState<string | null>(null);
+  const [barDraft, setBarDraft] = useState<null | {
+    successMetric: EvidenceBar['successMetric'];
+    successTarget: string;
+    maxSpend: string;
+    maxDays: string;
+    maxContacts: string;
+  }>(null);
+  const openBar = (bar?: EvidenceBar) =>
+    setBarDraft({
+      successMetric: bar?.successMetric || 'conversations',
+      successTarget: bar?.successTarget?.toString() || '',
+      maxSpend: bar?.maxSpend?.toString() || '',
+      maxDays: bar?.maxDays?.toString() || '',
+      maxContacts: bar?.maxContacts?.toString() || '',
+    });
+  const describeBar = (bar: EvidenceBar) =>
+    [
+      `${bar.successTarget} ${bar.successMetric} to win`,
+      bar.maxSpend !== undefined ? `stop at ${bar.maxSpend} spend` : '',
+      bar.maxDays !== undefined ? `stop at ${bar.maxDays} days` : '',
+      bar.maxContacts !== undefined ? `stop at ${bar.maxContacts} contacts` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
   const briefGaps = useMemo(
     () => (selected ? campaignBrief.gaps(b, selected) : []),
     [b, selected],
@@ -511,6 +536,132 @@ export default function DoWorkspace({
                 <div>
                   <strong>Completion means</strong>
                   <p>{selected.completionCriteria}</p>
+                </div>
+                <div className="evidence-bar">
+                  <strong>Evidence bar</strong>
+                  {barDraft === null ? (
+                    <p>
+                      {selected.evidenceBar ? (
+                        <>
+                          {describeBar(selected.evidenceBar)}
+                          {!selected.evidenceBar.setAt && (
+                            <span className="pill amber"> proposed, not confirmed</span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="muted">
+                          Not set. Without a win target and a stop condition the weekly memo can only say wait.
+                        </span>
+                      )}{' '}
+                      {selected.evidenceBar && !selected.evidenceBar.setAt && (
+                        <Button
+                          size="sm"
+                          disabled={busy}
+                          onClick={() =>
+                            act('confirm_evidence_bar', { endeavorId: selected.id })
+                          }
+                        >
+                          Confirm
+                        </Button>
+                      )}{' '}
+                      {!['completed', 'stopped'].includes(selected.status) && (
+                        <button
+                          type="button"
+                          className="link-button"
+                          onClick={() => openBar(selected.evidenceBar)}
+                        >
+                          {selected.evidenceBar ? 'change' : 'set'}
+                        </button>
+                      )}
+                    </p>
+                  ) : (
+                    <div className="evidence-bar-form">
+                      <select
+                        aria-label="Success metric"
+                        value={barDraft.successMetric}
+                        onChange={(event) =>
+                          setBarDraft({
+                            ...barDraft,
+                            successMetric: event.target.value as EvidenceBar['successMetric'],
+                          })
+                        }
+                      >
+                        <option value="conversations">conversations (pipeline)</option>
+                        {campaignMetrics.map((metric) => (
+                          <option key={metric} value={metric}>
+                            {metric} (classified signal)
+                          </option>
+                        ))}
+                      </select>
+                      <Input
+                        type="number"
+                        min="1"
+                        placeholder="Win target"
+                        value={barDraft.successTarget}
+                        onChange={(event) =>
+                          setBarDraft({ ...barDraft, successTarget: event.target.value })
+                        }
+                      />
+                      <Input
+                        type="number"
+                        min="1"
+                        placeholder="Stop at spend (optional)"
+                        value={barDraft.maxSpend}
+                        onChange={(event) =>
+                          setBarDraft({ ...barDraft, maxSpend: event.target.value })
+                        }
+                      />
+                      <Input
+                        type="number"
+                        min="1"
+                        placeholder="Stop at days (optional)"
+                        value={barDraft.maxDays}
+                        onChange={(event) =>
+                          setBarDraft({ ...barDraft, maxDays: event.target.value })
+                        }
+                      />
+                      <Input
+                        type="number"
+                        min="1"
+                        placeholder="Stop at contacts (optional)"
+                        value={barDraft.maxContacts}
+                        onChange={(event) =>
+                          setBarDraft({ ...barDraft, maxContacts: event.target.value })
+                        }
+                      />
+                      <div className="idea-actions">
+                        <Button
+                          size="sm"
+                          disabled={
+                            busy ||
+                            !barDraft.successTarget ||
+                            (!barDraft.maxSpend && !barDraft.maxDays && !barDraft.maxContacts)
+                          }
+                          onClick={async () => {
+                            if (
+                              await act('set_evidence_bar', {
+                                endeavorId: selected.id,
+                                successMetric: barDraft.successMetric,
+                                successTarget: barDraft.successTarget,
+                                maxSpend: barDraft.maxSpend || undefined,
+                                maxDays: barDraft.maxDays || undefined,
+                                maxContacts: barDraft.maxContacts || undefined,
+                              })
+                            )
+                              setBarDraft(null);
+                          }}
+                        >
+                          Save bar
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setBarDraft(null)}>
+                          Cancel
+                        </Button>
+                      </div>
+                      <p className="small muted">
+                        Decide the bar before you launch. Changing it later is allowed and the memo says so.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="execution-hero">

@@ -176,3 +176,7 @@
 @media (max-width: 620px) {
   .skill-card { grid-template-columns: 1fr; }
 }
+
+.evidence-bar { grid-column: 1 / -1; }
+.evidence-bar-form { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); align-items: center; margin-top: 6px; }
+.evidence-bar-form .idea-actions, .evidence-bar-form .small { grid-column: 1 / -1; }

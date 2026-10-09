@@ -36,7 +36,9 @@ import {
   type EndeavorStatus,
   type IdeaKind,
   type MarketStatus,
+  type MemoVerdict,
   campaignMetrics,
+  memoVerdicts,
 } from '@/lib/engine';
 import {
   addExploreMessage,
@@ -51,11 +53,13 @@ import {
   addChecklistItem,
   addObservation,
   addResearchCandidates,
+  confirmEvidenceBar,
   defaultWorkBrief,
   endeavorByCode,
   endeavorFor,
   ensureCampaignCodes,
   prepareGuidedProposal,
+  setEvidenceBar,
   reviewArtifact,
   reviewResearchCandidate,
   saveArtifact,
@@ -76,6 +80,15 @@ import {
 } from '@/lib/connections';
 import { parseSignalsCsv } from '@/lib/csv';
 import { demoCampaignBriefAnswer, promoteConcept, skillFor } from '@/lib/skills';
+import {
+  decideMemoLine,
+  generateMemo,
+  memoFor,
+  narrationPrompt,
+  parseNarration,
+  periodFor,
+} from '@/lib/memo';
+import { getSchedule, upsertSchedule, validateSchedule } from '@/lib/memo-store';
 import {
   addCorrection,
   contextPack,
@@ -120,7 +133,7 @@ import {
   sharedId,
 } from '@/lib/sharing';
 import { runtime } from '@/lib/runtime';
-import { planExecution } from '@/lib/execution-policy';
+import { planExecution, planMemoNarration } from '@/lib/execution-policy';
 // Allow the bounded provider call and its final persistence to finish.
 export const maxDuration = 180;
 const out = (x: unknown, s = 200) =>
@@ -422,7 +435,13 @@ async function loadOwned(u: User, id?: string) {
     // Endeavors created before campaign codes existed pick up codes on first
     // load, numbered by creation order. A concurrent writer wins; reload then.
     const business = JSON.parse(row.data) as BusinessDocument;
-    if (ensureCampaignCodes(business)) {
+    const codesChanged = ensureCampaignCodes(business);
+    // The weekly memo is due when no memo exists for this ISO week. A tick
+    // normally makes it first; otherwise it appears on open, one week late at most.
+    const memoDue =
+      !!business.work?.endeavors?.length && !memoFor(business, periodFor().weekKey);
+    if (memoDue) generateMemo(business, { generatedBy: 'lazy' });
+    if (codesChanged || memoDue) {
       const saved = await saveBusiness(
         runtime(),
         u,
@@ -436,11 +455,15 @@ async function loadOwned(u: User, id?: string) {
           : { data: JSON.stringify(business), revision: saved };
     }
   }
+  const memoSchedule = row
+    ? await getSchedule(runtime(), u.id, chosen).catch(() => null)
+    : null;
   return {
     ai,
     business: row ? JSON.parse(row.data) : null,
     revision: row?.revision || 0,
     businesses: summaries,
+    memoSchedule,
   };
 }
 export async function GET(req: Request) {
@@ -1057,6 +1080,64 @@ export async function POST(req: Request) {
         completionCriteria: endeavor.completionCriteria,
         audience: txt(x.audience || '', 1200),
       });
+    } else if (op === 'set_evidence_bar') {
+      const optionalNumber = (value: unknown) =>
+        value === undefined || value === null || value === '' ? undefined : numeric(value);
+      setEvidenceBar(b, required(x.endeavorId, 100), {
+        successMetric: txt(x.successMetric, 40) as 'conversations',
+        successTarget: numeric(x.successTarget),
+        maxSpend: optionalNumber(x.maxSpend),
+        maxDays: optionalNumber(x.maxDays),
+        maxContacts: optionalNumber(x.maxContacts),
+      });
+    } else if (op === 'confirm_evidence_bar') {
+      confirmEvidenceBar(b, required(x.endeavorId, 100));
+    } else if (op === 'generate_memo') {
+      generateMemo(b, { generatedBy: 'owner' });
+    } else if (op === 'decide_memo_line') {
+      const verdict = txt(x.verdict, 20);
+      if (!memoVerdicts.includes(verdict as MemoVerdict))
+        throw Error(`Choose a verdict: ${memoVerdicts.join(', ')}.`);
+      decideMemoLine(
+        b,
+        required(x.memoId, 100),
+        required(x.endeavorId, 100),
+        verdict as MemoVerdict,
+        txt(x.note || '', 500),
+      );
+    } else if (op === 'mark_memo_read') {
+      const memo = (b.memos || []).find((item) => item.id === x.memoId);
+      if (!memo) throw Error('Memo not found.');
+      memo.readAt = new Date().toISOString();
+    } else if (op === 'narrate_memo') {
+      const memo = (b.memos || []).find((item) => item.id === x.memoId);
+      if (!memo) throw Error('Memo not found.');
+      if (b.mode === 'demo')
+        throw Error('Narration uses live AI and is unavailable in the fictional demo.');
+      const plan = planMemoNarration();
+      const answer = await runAI(runtime(), u.id, txt(x.key || '', 500), narrationPrompt(memo), {
+        workload: plan.workload,
+      });
+      const meta = answer.__aiMeta as { provider?: 'deepseek' | 'openai' } | undefined;
+      memo.narrative = {
+        text: parseNarration(answer, memo),
+        provider: meta?.provider === 'openai' ? 'openai' : 'deepseek',
+        createdAt: new Date().toISOString(),
+      };
+      addLog(b, `Memo ${memo.weekKey} narrated for review.`);
+    } else if (op === 'set_memo_schedule') {
+      const schedule = validateSchedule({
+        weekday: x.weekday,
+        hourUtc: x.hourUtc,
+        enabled: x.enabled,
+      });
+      await upsertSchedule(runtime(), u.id, id, schedule);
+      addLog(
+        b,
+        schedule.enabled
+          ? `Weekly memo scheduled for weekday ${schedule.weekday} at ${String(schedule.hourUtc).padStart(2, '0')}:00 UTC.`
+          : 'Weekly memo schedule paused.',
+      );
     } else if (op === 'promote_concept') {
       const index = Number(x.index);
       if (!Number.isInteger(index) || index < 0)

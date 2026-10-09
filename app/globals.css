@@ -2059,3 +2059,19 @@ textarea:focus-visible {
 .knowledge-preview summary{cursor:pointer;font-weight:600;font-size:13px}
 .knowledge-preview pre{white-space:pre-wrap;max-height:320px;overflow:auto;font-family:inherit;font-size:12px;background:var(--muted);padding:12px;border-radius:10px;margin-top:8px}
 .campaign-table td.campaign-stale small{color:#a33}
+
+.portfolio-memo{display:grid;gap:12px;border:1px solid var(--border);background:var(--card);border-radius:18px;padding:20px}
+.memo-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.memo-head h3{margin:4px 0}
+.memo-narrative{margin:0;border-left:3px solid var(--border);padding:8px 14px;background:var(--muted);border-radius:8px}
+.memo-line{display:grid;gap:6px;border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:var(--background)}
+.memo-line.decided{opacity:.8}
+.memo-line p{margin:0}
+.memo-line-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.memo-line-head .campaign-code{margin-left:0}
+.memo-decide{display:grid;gap:8px}
+.memo-verdicts{display:flex;gap:6px;flex-wrap:wrap}
+.memo-verdicts .pill{cursor:pointer;background:var(--card);border:1px solid var(--border)}
+.memo-verdicts .pill.active{border-color:var(--foreground);box-shadow:0 0 0 1px var(--foreground)}
+.pill.verdict-keep{background:#e4f3ec}.pill.verdict-kill{background:#f9e3e3}.pill.verdict-change{background:#fff2d9}.pill.verdict-test{background:#e6ecfa}.pill.verdict-wait{background:var(--muted)}
+.memo-schedule summary{cursor:pointer}

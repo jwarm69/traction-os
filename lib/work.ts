@@ -1,10 +1,12 @@
 import {
   addLog,
+  campaignMetrics,
   uid,
   type ArtifactKind,
   type BusinessDocument,
   type Endeavor,
   type EndeavorStatus,
+  type EvidenceBar,
   type MarketingIdea,
   type PortfolioState,
   type ResearchCandidate,
@@ -210,6 +212,10 @@ export function prepareGuidedProposal(business: BusinessDocument) {
     intendedDeliverables: [proposal.action, proposal.measurementPlan],
     effortBudget: `${proposal.ownerContribution}; ${proposal.cost}; ${proposal.timeWindow}`,
     completionCriteria: `${proposal.successRule} Stop: ${proposal.stoppingRule}`,
+    ...(() => {
+      const proposed = proposeEvidenceBar(proposal);
+      return proposed ? { evidenceBar: proposed } : {};
+    })(),
     status: 'preparing',
     checklist: [proposal.action, proposal.measurementPlan].map((text) => ({
       id: uid('step'),
@@ -261,8 +267,121 @@ export function transitionEndeavor(
   endeavor.blockedReason = status === 'blocked' ? reason.trim() : undefined;
   endeavor.completedAt = status === 'completed' ? now() : undefined;
   endeavor.updatedAt = now();
+  if (status === 'in_progress' && endeavor.evidenceBar && !endeavor.evidenceBar.startedAt)
+    endeavor.evidenceBar.startedAt = endeavor.updatedAt;
   addLog(business, `Do work ${status.replace('_', ' ')}: ${endeavor.title}.`);
   return endeavor;
+}
+
+const metricWords: Record<string, EvidenceBar['successMetric']> = {
+  conversation: 'conversations',
+  conversations: 'conversations',
+  call: 'conversations',
+  calls: 'conversations',
+  reply: 'conversations',
+  replies: 'conversations',
+  lead: 'leads',
+  leads: 'leads',
+  signup: 'leads',
+  signups: 'leads',
+  qualified: 'qualified',
+  deal: 'deals',
+  deals: 'deals',
+  customer: 'deals',
+  customers: 'deals',
+  sale: 'deals',
+  sales: 'deals',
+  revenue: 'revenue',
+};
+
+/**
+ * Best-effort bar from a guided proposal's free text. Never guesses: a field
+ * that cannot be parsed stays empty, and the result has no setAt so the memo
+ * treats it as a proposal until the owner confirms.
+ */
+export function proposeEvidenceBar(proposal: {
+  successRule: string;
+  cost: string;
+  timeWindow: string;
+}): EvidenceBar | undefined {
+  const success = proposal.successRule.toLowerCase();
+  const match = success.match(/(\d+(?:\.\d+)?)\s*(?:of\s*\d+\s*)?(?:[a-z-]+\s+){0,3}?([a-z]+)/);
+  let successMetric: EvidenceBar['successMetric'] | undefined;
+  let successTarget: number | undefined;
+  if (match) {
+    const words = success.slice(match.index).split(/[^a-z]+/).filter(Boolean);
+    const word = words.find((item) => item in metricWords);
+    if (word) {
+      successMetric = metricWords[word];
+      successTarget = Number(match[1]);
+    }
+  }
+  if (!successMetric || !successTarget || successTarget <= 0) return undefined;
+  const bar: EvidenceBar = { successMetric, successTarget };
+  const spend = proposal.cost.replace(/,/g, '').match(/\$\s*(\d+(?:\.\d+)?)/);
+  if (spend && Number(spend[1]) > 0) bar.maxSpend = Number(spend[1]);
+  const days = proposal.timeWindow.toLowerCase().match(/(\d+)\s*(day|days|week|weeks)/);
+  if (days) bar.maxDays = Number(days[1]) * (days[2].startsWith('week') ? 7 : 1);
+  if (!bar.maxSpend && !bar.maxDays) return undefined;
+  return bar;
+}
+
+const daysBetween = (from: string, to: string) =>
+  Math.max(0, Math.floor((Date.parse(to) - Date.parse(from)) / 86_400_000));
+
+/** Sets or replaces the evidence bar. Changing it after work started is allowed and logged. */
+export function setEvidenceBar(
+  business: BusinessDocument,
+  endeavorId: string,
+  input: Omit<EvidenceBar, 'setAt' | 'startedAt'>,
+) {
+  const endeavor = endeavorFor(business, endeavorId);
+  if (endeavor.status === 'completed' || endeavor.status === 'stopped')
+    throw Error('Reopen this work before changing its evidence bar.');
+  const metric = input.successMetric;
+  if (metric !== 'conversations' && !campaignMetrics.includes(metric))
+    throw Error(`Choose a success metric: conversations, ${campaignMetrics.join(', ')}.`);
+  if (!Number.isFinite(input.successTarget) || input.successTarget <= 0)
+    throw Error('Set a positive success target.');
+  const limits = (['maxSpend', 'maxDays', 'maxContacts'] as const).filter(
+    (key) => input[key] !== undefined && input[key] !== null,
+  );
+  for (const key of limits)
+    if (!Number.isFinite(input[key]) || (input[key] as number) <= 0)
+      throw Error('Stop conditions must be positive numbers.');
+  if (!limits.length)
+    throw Error('Set at least one stop condition: spend, days, or contacts.');
+  const previous = endeavor.evidenceBar;
+  const at = now();
+  const bar: EvidenceBar = {
+    successMetric: metric,
+    successTarget: input.successTarget,
+    setAt: at,
+  };
+  for (const key of limits) bar[key] = input[key] as number;
+  const startedAt = previous?.startedAt || (endeavor.status === 'in_progress' ? at : undefined);
+  if (startedAt) bar.startedAt = startedAt;
+  endeavor.evidenceBar = bar;
+  endeavor.updatedAt = at;
+  if (previous?.setAt && startedAt)
+    addLog(
+      business,
+      `Evidence bar changed for ${endeavor.code} after ${daysBetween(startedAt, at)} day${daysBetween(startedAt, at) === 1 ? '' : 's'} of activity.`,
+    );
+  else addLog(business, `Evidence bar ${previous?.setAt ? 'changed' : 'set'} for ${endeavor.code}.`);
+  return bar;
+}
+
+/** Confirms a proposed bar as is. */
+export function confirmEvidenceBar(business: BusinessDocument, endeavorId: string) {
+  const endeavor = endeavorFor(business, endeavorId);
+  const proposed = endeavor.evidenceBar;
+  if (!proposed) throw Error('There is no proposed evidence bar to confirm.');
+  if (proposed.setAt) return proposed;
+  const { setAt: _unused, startedAt: _started, ...rest } = proposed;
+  void _unused;
+  void _started;
+  return setEvidenceBar(business, endeavorId, rest);
 }
 
 export function updateEndeavor(

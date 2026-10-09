@@ -1,4 +1,5 @@
 import type { BusinessDocument } from './engine';
+import { latestMemo, undecidedLines } from './memo.ts';
 
 export type OwnerAction = {
   id: string;
@@ -37,6 +38,14 @@ export function ownerQueue(business: BusinessDocument): OwnerAction[] {
       `Review ${unreviewed.length} research finding${unreviewed.length === 1 ? '' : 's'}`,
       'Confirm or correct the evidence before it guides the next plan.',
       'memory',
+    );
+  const undecided = undecidedLines(latestMemo(business));
+  if (undecided.length)
+    add(
+      'memo',
+      `Decide ${undecided.length} campaign line${undecided.length === 1 ? '' : 's'} from this week's memo`,
+      'Each line proposes keep, kill, change, test, or wait against the evidence bar you set. Your decision is what changes the work.',
+      'portfolio',
     );
   const uncertain = business.outreach.prospects.filter(
     (p) => p.status === 'uncertain' || p.status === 'sending',
