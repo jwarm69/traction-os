@@ -28,8 +28,11 @@ export type Fact = Provenance & {
   status: 'unreviewed' | 'confirmed' | 'corrected';
   category?: FactCategory;
 };
+/** Bounded run instructions with inputs, checks, and a stable output shape. */
+export type SkillId = 'campaign_brief';
+export const skillIds: SkillId[] = ['campaign_brief'];
 /** Which runs a standing correction applies to. Skill ids join this list as skills exist. */
-export type CorrectionScope = 'all' | 'customer_language' | 'campaign_brief';
+export type CorrectionScope = 'all' | 'customer_language' | SkillId;
 export const correctionScopes: CorrectionScope[] = [
   'all',
   'customer_language',
@@ -278,6 +281,8 @@ export type ArtifactVersion = {
   content: string;
   createdAt: string;
   source: 'owner' | 'assistant';
+  /** Validated structured output from a skill run, as JSON. Absent on plain versions. */
+  data?: string;
 };
 export type WorkArtifact = {
   id: string;
@@ -304,6 +309,7 @@ export type ExecutionRun = {
   artifactId?: string;
   error?: string;
   nextDecision?: string;
+  skillId?: SkillId;
 };
 export type ResearchCandidate = {
   id: string;
@@ -338,6 +344,8 @@ export type Endeavor = {
   title: string;
   kind: IdeaKind;
   description: string;
+  /** Who the work is for. Seeded from the idea or proposal; owner-editable. */
+  audience?: string;
   intendedDeliverables: string[];
   effortBudget: string;
   completionCriteria: string;

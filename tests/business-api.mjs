@@ -201,6 +201,22 @@ try {
   const recorded = current.work.endeavors[0].executionRuns.at(-1).contextSnapshot || '';
   assert.match(recorded, /Integration rule: never promise outcomes\./);
   assert.match(recorded, /tired of taking calls during dinner/);
+  // Campaign brief skill: the demo path returns three fixture concepts, the run
+  // records its skill, and one concept promotes idempotently.
+  assert.ok(current.work.endeavors[0].audience, 'audience seeded from the idea');
+  await act('run_work', { endeavorId, skillId: 'campaign_brief' });
+  const briefRun = current.work.endeavors[0].executionRuns.at(0);
+  assert.equal(briefRun.skillId, 'campaign_brief');
+  const briefArtifact = current.work.endeavors[0].artifacts.find((a) => a.id === briefRun.artifactId);
+  assert.ok(briefArtifact.versions[0].data, 'structured data saved on the version');
+  assert.equal(JSON.parse(briefArtifact.versions[0].data).concepts.length, 3);
+  const artifactsBefore = current.work.endeavors[0].artifacts.length;
+  await act('promote_concept', { endeavorId, artifactId: briefArtifact.id, index: 0 });
+  await act('promote_concept', { endeavorId, artifactId: briefArtifact.id, index: 0 });
+  assert.equal(current.work.endeavors[0].artifacts.length, artifactsBefore + 1);
+  await act('set_audience', { endeavorId, audience: '' });
+  await act('run_work', { endeavorId, skillId: 'campaign_brief' }, 400);
+  await act('set_audience', { endeavorId, audience: 'Independent owners' });
   await act('unmark_exemplar', { endeavorId, artifactId });
   await act('remove_correction', { correctionId: current.corrections[0].id });
   assert.equal(current.corrections.length, 0);
