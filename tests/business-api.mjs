@@ -217,6 +217,21 @@ try {
   await act('set_audience', { endeavorId, audience: '' });
   await act('run_work', { endeavorId, skillId: 'campaign_brief' }, 400);
   await act('set_audience', { endeavorId, audience: 'Independent owners' });
+  // Performance memo: a bar, classified spend, a memo on demand, a decision
+  // with its side effect, and a narration refusal in demo mode.
+  await act('set_evidence_bar', { endeavorId, successMetric: 'conversations', successTarget: 3, maxSpend: 500 });
+  assert.ok(current.work.endeavors[0].evidenceBar.setAt);
+  await act('set_evidence_bar', { endeavorId, successMetric: 'conversations', successTarget: 3 }, 400);
+  await act('generate_memo');
+  const memo = current.memos[0];
+  const memoLine = memo.lines.find((l) => l.endeavorId === endeavorId);
+  assert.ok(memoLine, 'in-progress endeavor has a memo line');
+  assert.equal(memoLine.proposedVerdict, 'wait');
+  await act('decide_memo_line', { memoId: memo.id, endeavorId, verdict: 'kill' }, 400);
+  await act('decide_memo_line', { memoId: memo.id, endeavorId, verdict: 'change', note: 'Integration: swap the hook.' });
+  assert.equal(current.memos[0].lines.find((l) => l.endeavorId === endeavorId).decision.verdict, 'change');
+  assert.ok(current.work.endeavors[0].checklist.some((item) => /Integration: swap the hook/.test(item.text)));
+  await act('narrate_memo', { memoId: memo.id }, 400);
   await act('unmark_exemplar', { endeavorId, artifactId });
   await act('remove_correction', { correctionId: current.corrections[0].id });
   assert.equal(current.corrections.length, 0);

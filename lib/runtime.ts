@@ -5,6 +5,8 @@ export type Runtime = {
   DEEPSEEK_API_KEY?: string;
   ALLOW_DEV_IDENTITY?: string;
   RUNNER_ENABLED?: string;
+  /** Bearer secret for POST /api/jobs/tick. Unset disables the route. */
+  JOB_SECRET?: string;
 };
 
 export function runtime(): Runtime {
@@ -15,5 +17,6 @@ export function runtime(): Runtime {
     DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
     ALLOW_DEV_IDENTITY: process.env.ALLOW_DEV_IDENTITY,
     RUNNER_ENABLED: process.env.RUNNER_ENABLED,
+    JOB_SECRET: process.env.JOB_SECRET,
   };
 }

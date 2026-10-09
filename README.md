@@ -39,13 +39,30 @@ npm run dev
 
 For local work, `npm run dev:local` mints a one-day token for the isolated `traction-dev` database (schema only, no owner data) and enables the dev identity header and runner. Put `DEEPSEEK_API_KEY` and `OPENAI_API_KEY` in a gitignored `.env.local` to exercise Do runs. With that server running, `TEST_BASE_URL=http://localhost:3000 node tests/runner-import-api.mjs` checks that a completed runner job returns to its endeavor.
 
-Local and production runs require `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. Founder-funded auto routing uses server-side `DEEPSEEK_API_KEY` and `OPENAI_API_KEY` values; OpenAI remains required for sourced research and strategic planning. Apply the SQL files in `migrations/` in order. To seed an owner, provide `OWNER_USERNAME`, `OWNER_PIN`, and `OWNER_EMAIL` alongside the Turso variables and run `node scripts/seed-owner.mjs`.
+Local and production runs require `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. `JOB_SECRET` is optional and only enables the scheduled memo route. Founder-funded auto routing uses server-side `DEEPSEEK_API_KEY` and `OPENAI_API_KEY` values; OpenAI remains required for sourced research and strategic planning. Apply the SQL files in `migrations/` in order. To seed an owner, provide `OWNER_USERNAME`, `OWNER_PIN`, and `OWNER_EMAIL` alongside the Turso variables and run `node scripts/seed-owner.mjs`.
 
 To add or refresh the paused Bite Club starter, provide `OWNER_EMAIL` and the Turso variables, then run `npm run seed:bite-club`. The seed is idempotent and keeps UF, FAU, and FSU as independent campus records.
 
 Open the local URL printed by the server. The demo is fully fictional and cannot send email. A real workspace remains useful without an AI key for owner facts, manual or CSV signals, deterministic diagnosis, saved results, and reviews. Live research, prospect discovery, tailored drafts, and new live experiment rounds require an OpenAI key for the current tab.
 
 Live research and tailored experiment rounds use the Responses API and `gpt-5.4-mini`. OpenAI, Gmail, and GA4 bearer tokens remain in React memory, are passed only for the requested operation, and are never stored in business documents, cookies, or browser storage. Reloading disconnects them.
+
+## Scheduled memos
+
+`POST /api/jobs/tick` generates due memos for every business with a schedule (set under Portfolio). It is spend-free, idempotent per ISO week, lease-protected, and authenticated by a `JOB_SECRET` bearer token of at least 16 characters. Apply `migrations/013_memo_schedules.sql` first. Any scheduler that can make an HTTPS request can drive it; a GitHub Actions schedule with the secret in a repository secret is the zero-infrastructure option:
+
+```yaml
+on:
+  schedule:
+    - cron: '5 7 * * 1'
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.JOB_SECRET }}" https://your-host/api/jobs/tick
+```
+
+Without a caller the memo still appears when the owner opens the business, one week late at most. `TEST_BASE_URL=http://localhost:3000 JOB_SECRET=<same value as the server> node tests/jobs-tick-api.mjs` checks the route against a local server.
 
 ## Verification
 
@@ -72,7 +89,8 @@ The deployed app uses its authenticated Turso account ID as the user key. Live p
 - The knowledge library is what every model call reads first: confirmed facts by category (offer, product, positioning, voice, proof, customer language, other) with a budget per category and a "verify" marker past 90 days, up to three owner-marked approved examples with the reason they work, and standing corrections scoped to all runs or one skill. The pack is capped at 12,000 characters, says what it dropped, and is shown verbatim under "What the agent will see" in Do before a run. Do runs, artifact generation, Explore ideation and chat, and the manual agent brief all read the same pack.
 - Skills are bounded run instructions with named inputs and code-side checks. The campaign brief skill checks for a confirmed offer fact and an audience before any reservation, lists missing optional inputs as unknowns the model must not invent, and returns three concepts that are validated in code: distinct angles and hooks, evidence traced to confirmed fact ids or shortlisted sources, length bounds, and stale facts listed under "Claims to verify". Nothing is dropped; problems are flagged for review. It routes to OpenAI strategic at the $0.125 reservation. A concept can be promoted to its own production-brief artifact, idempotently.
 - Gmail uses `gmail.send` and `gmail.readonly`; GA4 uses `analytics.readonly`. Gmail approval is bound to one recipient, reviewed content, a stable message ID, and the verified sending mailbox. The app persists `sending` before the external request. An ambiguous outcome becomes `uncertain`, blocks retry, and requires explicit reconciliation.
-- Reply sync and GA4 import are owner-triggered. Weekly reviews are generated on demand and show the next due date; no background scheduler is claimed.
+- Reply sync and GA4 import are owner-triggered. Weekly reviews are generated on demand and show the next due date.
+- The weekly performance memo is computed, never generated: one line per active campaign with this period's and cumulative numbers, progress against the owner's evidence bar (a win target plus at least one stop condition of spend, days, or contacts), and a proposed verdict of keep, kill, change, test, or wait from fixed rules. A campaign without a confirmed bar can only get wait. Decisions are the owner's; kill stops the work and change adds a checklist item, both requiring a one-line note. Narration is owner-triggered on the routine route and is rejected if it disagrees with a computed line. Memos are keyed by ISO week, one per business per week, and appear on open if nothing generated them first.
 - Model research and drafts still require owner review. Experiment targets are hypotheses and result comparisons are not causal attribution.
 
 The bundled component catalog has existing lint diagnostics in unused primitives. Application-source lint is checked separately with `npx oxlint app lib db tests`.

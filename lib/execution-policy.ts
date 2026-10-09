@@ -115,3 +115,16 @@ export const executionCostLabel = (plan: ExecutionPlan) => {
     plan.maximumSharedReservationMicros / 1_000_000
   ).toFixed(plan.maximumSharedReservationMicros < 100_000 ? 3 : 2)}`;
 };
+
+/** Owner-triggered narration of a computed memo. Routine route; the model may not change a verdict. */
+export function planMemoNarration(): ExecutionPlan {
+  return {
+    route: 'in_app',
+    label: 'DeepSeek narration',
+    reason: 'Prose over computed numbers and verdicts. The narration is rejected if it disagrees with the memo.',
+    provider: 'deepseek',
+    workload: 'routine',
+    maximumSharedReservationMicros: 25_000,
+    requiresApproval: false,
+  };
+}

@@ -67,6 +67,13 @@ type Res = {
   };
   business: BusinessDocument | null;
   businesses: Summary[];
+  memoSchedule?: {
+    enabled: boolean;
+    weekday: number;
+    hourUtc: number;
+    nextDueAt: string;
+    lastGeneratedWeek: string | null;
+  } | null;
   access?: { role: 'owner' | 'viewer'; sharedBy?: string };
   members?: { memberId: string; username: string }[];
   network?: { sharing: boolean; insights: Insight[] };
@@ -102,7 +109,8 @@ export default function Workspace({ username }: { username: string }) {
       sharing: true,
       insights: [],
     }),
-    [playbooks, setPlaybooks] = useState<Playbook[]>([]);
+    [playbooks, setPlaybooks] = useState<Playbook[]>([]),
+    [memoSchedule, setMemoSchedule] = useState<Res['memoSchedule']>(null);
   const viewer = access?.role === 'viewer';
   const accept = (d: Res) => {
     setAiBudget(d.ai);
@@ -113,6 +121,7 @@ export default function Workspace({ username }: { username: string }) {
     setMembers(d.members || []);
     if (d.network) setNetwork(d.network);
     if (d.playbooks) setPlaybooks(d.playbooks);
+    if (d.memoSchedule !== undefined) setMemoSchedule(d.memoSchedule);
     if (d.business) {
       const url = new URL(window.location.href);
       url.searchParams.set('businessId', d.business.id);
@@ -498,6 +507,7 @@ export default function Workspace({ username }: { username: string }) {
                     key={`${b.id}:${revision}`}
                     b={b}
                     businesses={businesses}
+                    memoSchedule={memoSchedule}
                     act={act}
                     busy={!!busy}
                     selectBusiness={(id) => {
