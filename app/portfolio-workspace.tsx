@@ -8,6 +8,8 @@ import { Textarea } from '@/components/ui/textarea';
 import type { BusinessDocument, PortfolioState } from '@/lib/engine';
 import { campaignTable, type CampaignRow } from '@/lib/campaigns';
 import MemoPanel from './memo-panel';
+import { downloadText, fileSlug } from './run-record-panel';
+import { campaignTableCsv, renderCaseStudy } from '@/lib/run-record';
 
 type Summary = {
   id: string;
@@ -171,7 +173,17 @@ export default function PortfolioWorkspace({
     <div className="portfolio-editor"><h3>Set {b.name}’s place</h3><select value={priority} onChange={(event) => setPriority(event.target.value as PortfolioState['priority'])}>{Object.entries(priorityLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><Input type="number" min="0" step="0.5" value={hours} onChange={(event) => setHours(event.target.value)} placeholder="Owner hours committed this week" /><Textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Why this business gets this level of attention" /><Button disabled={busy} onClick={() => act('set_portfolio', { priority, ownerHours: hours, note })}>Save portfolio priority</Button></div>
     <MemoPanel b={b} act={act} busy={busy} />
     <div className="portfolio-campaigns">
-      <h3>Campaigns in {b.name}</h3>
+      <div className="portfolio-campaigns-head">
+        <h3>Campaigns in {b.name}</h3>
+        <div className="portfolio-exports">
+          <Button size="sm" variant="outline" onClick={() => downloadText(`${fileSlug(b.name)}-campaigns.csv`, campaignTableCsv(b), 'text/csv')}>
+            Download campaign table (CSV)
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => downloadText(`${fileSlug(b.name)}-case-study.md`, renderCaseStudy(b))}>
+            Export case study draft
+          </Button>
+        </div>
+      </div>
       <p className="muted small">Counts are observations. Nothing here attributes revenue to a campaign causally. Unknown means no evidence was recorded, not zero.</p>
       <CampaignTable b={b} />
     </div>

@@ -37,6 +37,7 @@ import './do-execution.css';
 import RunnerPanel from './runner-panel';
 import PipelinePanel from './pipeline-panel';
 import EvidenceBarPanel from './evidence-bar-panel';
+import RunRecordPanel from './run-record-panel';
 
 type Act = (op: string, extra?: Record<string, unknown>) => Promise<boolean>;
 const statusLabels: Record<EndeavorStatus, string> = {
@@ -1015,6 +1016,8 @@ export default function DoWorkspace({
                   </div>
                 </details>
               </div>
+
+              <RunRecordPanel b={b} endeavorId={selected.id} />
 
               <div className="work-section">
                 <h3>Observations and learning</h3>

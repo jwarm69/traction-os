@@ -1,6 +1,6 @@
 # Marketing-engineer adaptation: map and steps 4–7
 
-Status: design map. Built so far: step 1 (campaign codes, PR #6), step 5 (knowledge library, PR #8), and step 3's evidence bar and memo core (see [PERFORMANCE-MEMO.md](PERFORMANCE-MEMO.md) for what shipped and what did not). Steps 2, 4, 6, and 7 remain designs. Steps 1–3 have their own designs: [CAMPAIGN-ID.md](CAMPAIGN-ID.md), [CUSTOMER-LANGUAGE.md](CUSTOMER-LANGUAGE.md), [PERFORMANCE-MEMO.md](PERFORMANCE-MEMO.md). This document adds a second source, checks it against the product and those three designs, records the amendments it forces, and outlines steps 4–7.
+Status: design map. Built so far: step 1 (campaign codes, PR #6), step 5 (knowledge library, PR #8), step 3's evidence bar and memo core (see [PERFORMANCE-MEMO.md](PERFORMANCE-MEMO.md) for what shipped and what did not), and step 6 (run record and exports; implementation notes under step 6). Steps 2, 4, and 7 remain designs. Steps 1–3 have their own designs: [CAMPAIGN-ID.md](CAMPAIGN-ID.md), [CUSTOMER-LANGUAGE.md](CUSTOMER-LANGUAGE.md), [PERFORMANCE-MEMO.md](PERFORMANCE-MEMO.md). This document adds a second source, checks it against the product and those three designs, records the amendments it forces, and outlines steps 4–7.
 
 Sources:
 
@@ -284,6 +284,15 @@ The roadmap compares preparation and review time against the old process. Tracti
 
 - `tests/run-record.test.mjs` (new): entries from in-app runs and runner imports; diff count against a fixture; effort is listed and never summed; a failed run appears with its error; purity.
 - `tests/business-api.mjs`: run, edit, add a correction with `fromArtifactId`, and assert the record shows one owner version and one correction.
+
+### Implementation notes (October 2026)
+
+Built as `lib/run-record.ts` with `tests/run-record.test.mjs`, a Run record section in Do (`app/run-record-panel.tsx`), and Portfolio buttons for the campaign table CSV and the case-study draft. Differences from the outline above:
+
+- Entries come from assistant artifact versions as well as `ExecutionRun`s, because `generate_artifact` and runner imports never create a run. Each entry is an in-app run, a desktop runner result (`runner-job:<id>`), or a generated draft (`version:<id>`). The runner route is not split into Codex and computer use; the business document does not record which one ran.
+- `ExecutionRun` was not extended. `route` is derived, and `skillId` arrives with step 4.
+- Owner edits and corrections are attributed to the assistant output they followed, up to the next assistant output on the same artifact. The changed-line count is an LCS diff over the first 2,000 lines.
+- The CSV leaves unknown cells empty, never 0, and prefixes text cells that a spreadsheet would execute as a formula with an apostrophe.
 
 ## Step 7 — Paired agent connection
 

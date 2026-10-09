@@ -2098,3 +2098,11 @@ textarea:focus-visible {
 .memo-preview[open]{gap:10px}
 .memo-preview summary{cursor:pointer;font-size:13px;color:var(--muted-foreground)}
 .memo-preview .memo-lines{margin-top:10px}
+.run-record-head,.portfolio-campaigns-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;align-items:center}
+.run-record-head h3,.portfolio-campaigns-head h3{margin:0}
+.portfolio-exports{display:flex;flex-wrap:wrap;gap:8px}
+.run-record-list{display:grid;gap:8px;list-style:none;margin:0;padding:0}
+.run-record-entry{display:grid;gap:4px;border:1px solid var(--border);border-left:3px solid #27705b;border-radius:10px;padding:10px 12px;background:var(--background)}
+.run-record-entry.failed{border-left-color:#a33}
+.run-record-entry.running{border-left-color:#3a5f9e}
+.run-record-entry p{margin:0}
