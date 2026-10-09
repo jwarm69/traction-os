@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import type { BusinessDocument, PortfolioState } from '@/lib/engine';
 import { campaignTable, type CampaignRow } from '@/lib/campaigns';
+import MemoPanel from './memo-panel';
 
 type Summary = {
   id: string;
@@ -18,6 +19,8 @@ type Summary = {
     active: number;
     blocked: number;
     latestObservation?: string;
+    memoWeek?: string;
+    undecidedMemoLines?: number;
   };
 };
 type Act = (op: string, extra?: Record<string, unknown>) => Promise<boolean>;
@@ -158,18 +161,20 @@ export default function PortfolioWorkspace({
   const [priority, setPriority] = useState<PortfolioState['priority']>(b.portfolio?.priority || 'next');
   const [hours, setHours] = useState(b.portfolio?.ownerHours?.toString() || '');
   const [note, setNote] = useState(b.portfolio?.note || '');
+  const undecidedTotal = businesses.reduce((sum, item) => sum + (item.workSummary?.undecidedMemoLines || 0), 0);
   const ordered = [...businesses].sort((a, z) => {
     const order = { now: 0, next: 1, maintain: 2, paused: 3 };
     return order[a.portfolio?.priority || 'next'] - order[z.portfolio?.priority || 'next'];
   });
   return <section className="portfolio-shell">
-    <div className="explore-intro"><div><p className="eyebrow">PORTFOLIO</p><h2>Put scarce owner attention where it matters now.</h2><p className="muted">Priorities are owner decisions. Work counts and observations come from each business record.</p></div></div>
+    <div className="explore-intro"><div><p className="eyebrow">PORTFOLIO</p><h2>Put scarce owner attention where it matters now.</h2><p className="muted">Priorities are owner decisions. Work counts and observations come from each business record.</p>{undecidedTotal > 0 && <p className="memo-metric">{undecidedTotal} campaign line{undecidedTotal === 1 ? '' : 's'} across your businesses wait on a memo decision.</p>}</div></div>
     <div className="portfolio-editor"><h3>Set {b.name}’s place</h3><select value={priority} onChange={(event) => setPriority(event.target.value as PortfolioState['priority'])}>{Object.entries(priorityLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><Input type="number" min="0" step="0.5" value={hours} onChange={(event) => setHours(event.target.value)} placeholder="Owner hours committed this week" /><Textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Why this business gets this level of attention" /><Button disabled={busy} onClick={() => act('set_portfolio', { priority, ownerHours: hours, note })}>Save portfolio priority</Button></div>
+    <MemoPanel b={b} act={act} busy={busy} />
     <div className="portfolio-campaigns">
       <h3>Campaigns in {b.name}</h3>
       <p className="muted small">Counts are observations. Nothing here attributes revenue to a campaign causally. Unknown means no evidence was recorded, not zero.</p>
       <CampaignTable b={b} />
     </div>
-    <div className="portfolio-grid">{ordered.map((business) => <article className={`portfolio-card priority-${business.portfolio?.priority || 'next'}`} key={business.id}><div><span className="idea-kind">{priorityLabels[business.portfolio?.priority || 'next']}</span><h3>{business.name}</h3><p>{business.portfolio?.note || 'No owner rationale recorded yet.'}</p></div><div className="portfolio-metrics"><span><Clock3 size={14} /> {business.portfolio?.ownerHours ?? '—'} owner hours</span><span>{business.workSummary?.active || 0} active work item{business.workSummary?.active === 1 ? '' : 's'}</span>{!!business.workSummary?.blocked && <span className="blocked-metric"><AlertTriangle size={14} /> {business.workSummary.blocked} blocked</span>}</div>{business.workSummary?.latestObservation && <p className="latest-learning"><strong>Latest observation</strong>{business.workSummary.latestObservation}</p>}<Button size="sm" variant="outline" onClick={() => selectBusiness(business.id)}>Open business</Button></article>)}</div>
+    <div className="portfolio-grid">{ordered.map((business) => <article className={`portfolio-card priority-${business.portfolio?.priority || 'next'}`} key={business.id}><div><span className="idea-kind">{priorityLabels[business.portfolio?.priority || 'next']}</span><h3>{business.name}</h3><p>{business.portfolio?.note || 'No owner rationale recorded yet.'}</p></div><div className="portfolio-metrics"><span><Clock3 size={14} /> {business.portfolio?.ownerHours ?? '—'} owner hours</span><span>{business.workSummary?.active || 0} active work item{business.workSummary?.active === 1 ? '' : 's'}</span>{!!business.workSummary?.blocked && <span className="blocked-metric"><AlertTriangle size={14} /> {business.workSummary.blocked} blocked</span>}{!!business.workSummary?.undecidedMemoLines && <span className="memo-metric">{business.workSummary.undecidedMemoLines} memo line{business.workSummary.undecidedMemoLines === 1 ? '' : 's'} to decide ({business.workSummary.memoWeek})</span>}</div>{business.workSummary?.latestObservation && <p className="latest-learning"><strong>Latest observation</strong>{business.workSummary.latestObservation}</p>}<Button size="sm" variant="outline" onClick={() => selectBusiness(business.id)}>Open business</Button></article>)}</div>
   </section>;
 }

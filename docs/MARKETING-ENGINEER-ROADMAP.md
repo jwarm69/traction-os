@@ -1,6 +1,6 @@
 # Marketing-engineer adaptation: map and steps 4–7
 
-Status: design map. Nothing below is built. Steps 1–3 have their own designs: [CAMPAIGN-ID.md](CAMPAIGN-ID.md), [CUSTOMER-LANGUAGE.md](CUSTOMER-LANGUAGE.md), [PERFORMANCE-MEMO.md](PERFORMANCE-MEMO.md). This document adds a second source, checks it against the product and those three designs, records the amendments it forces, and outlines steps 4–7.
+Status: design map. Built so far: step 1 (campaign codes, PR #6), step 5 (knowledge library, PR #8), and step 3's evidence bar and memo core (see [PERFORMANCE-MEMO.md](PERFORMANCE-MEMO.md) for what shipped and what did not). Steps 2, 4, 6, and 7 remain designs. Steps 1–3 have their own designs: [CAMPAIGN-ID.md](CAMPAIGN-ID.md), [CUSTOMER-LANGUAGE.md](CUSTOMER-LANGUAGE.md), [PERFORMANCE-MEMO.md](PERFORMANCE-MEMO.md). This document adds a second source, checks it against the product and those three designs, records the amendments it forces, and outlines steps 4–7.
 
 Sources:
 

@@ -327,6 +327,76 @@ export type WorkObservation = {
   /** Owner's judgment of the approach, separate from the observed evidence. */
   verdict?: 'repeat' | 'adjust' | 'drop' | 'unknown';
 };
+/**
+ * What counts as a win and when to stop judging, set before launch. A bar with
+ * an empty setAt is a proposal parsed from a guided experiment; it is treated
+ * as absent until the owner confirms it.
+ */
+export type EvidenceBar = {
+  /** 'conversations' comes from the pipeline; the rest are classified signals. */
+  successMetric: CampaignMetric | 'conversations';
+  successTarget: number;
+  /** Stop conditions. At least one is required; the bar is exhausted when any is reached. */
+  maxSpend?: number;
+  maxDays?: number;
+  maxContacts?: number;
+  /** When the maxDays clock started. Set on the move to in_progress, or when a bar is set on running work. */
+  startedAt?: string;
+  setAt: string;
+  /** Set when a confirmed bar changes after the clock started. The memo mentions it. */
+  revisedAt?: string;
+};
+export type MemoVerdict = 'keep' | 'kill' | 'change' | 'test' | 'wait';
+export const memoVerdicts: MemoVerdict[] = ['keep', 'kill', 'change', 'test', 'wait'];
+/** A compact, frozen copy of the campaign table numbers a memo line relied on. */
+export type MemoNumbers = {
+  contacts: number;
+  contacted: number;
+  conversations: number;
+  won: number;
+  spend: number | null;
+  leads: number | null;
+  qualified: number | null;
+  deals: number | null;
+  revenue: number | null;
+  churned: number | null;
+  costPerConversation: number | null;
+};
+export type MemoLine = {
+  endeavorId: string;
+  code: string;
+  title: string;
+  status: EndeavorStatus;
+  period: MemoNumbers;
+  cumulative: MemoNumbers;
+  bar?: {
+    successMetric: EvidenceBar['successMetric'];
+    successValue: number | null;
+    successTarget: number;
+    exhausted: boolean;
+    /** e.g. "spend 1,400 of 2,000; day 9 of 14". */
+    progress: string;
+  };
+  proposedVerdict: MemoVerdict;
+  /** One sentence that names the numbers it relies on. */
+  reason: string;
+  caveats: string[];
+  decision?: { verdict: MemoVerdict; note?: string; decidedAt: string };
+};
+export type PerformanceMemo = {
+  id: string;
+  /** ISO week key, e.g. "2026-W41". One memo per business per key. */
+  weekKey: string;
+  periodStart: string;
+  periodEnd: string;
+  createdAt: string;
+  refreshedAt?: string;
+  generatedBy: 'schedule' | 'owner' | 'lazy';
+  summary: string;
+  lines: MemoLine[];
+  excluded: { code: string; reason: string }[];
+  readAt?: string;
+};
 export type Endeavor = {
   id: string;
   /** Short immutable campaign code, unique within the business, e.g. "AG003". */
@@ -348,6 +418,7 @@ export type Endeavor = {
   research: ResearchCandidate[];
   observations: WorkObservation[];
   executionRuns?: ExecutionRun[];
+  evidenceBar?: EvidenceBar;
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
@@ -427,6 +498,8 @@ export type BusinessDocument = {
   marketLabel?: string;
   markets?: Market[];
   corrections?: Correction[];
+  /** Weekly performance memos, newest first. */
+  memos?: PerformanceMemo[];
   facts: Fact[];
   signals: Signal[];
   diagnosis?: Diagnosis;

@@ -1,6 +1,6 @@
 # Performance memo design (step 3 of the marketing-engineer adaptation)
 
-Status: design for implementation. Nothing below is built. Depends on [CAMPAIGN-ID.md](CAMPAIGN-ID.md) for `campaignTable`, `Endeavor.code`, and the `campaignMetric` signal vocabulary. [CUSTOMER-LANGUAGE.md](CUSTOMER-LANGUAGE.md) is independent.
+Status: core implemented — evidence bar, pure memo generation with the verdict rules and the pacing amendment, owner decisions, lazy weekly generation on load, the owner queue item, and the Portfolio view. Not yet built: the scheduled tick (migration 013, `JOB_SECRET`) and owner-triggered AI narration. See "Implementation notes" at the end for deviations. Depends on [CAMPAIGN-ID.md](CAMPAIGN-ID.md) for `campaignTable`, `Endeavor.code`, and the `campaignMetric` signal vocabulary. [CUSTOMER-LANGUAGE.md](CUSTOMER-LANGUAGE.md) is independent.
 
 Source of the idea: Greg Isenberg's "marketing engineers" thread, Step 5 and Step 8. "The performance agent reads your campaign table every Monday and writes you a short memo, the way a sharp analyst would. Every line ends in a decision for you: keep, kill, change or test." And on the evidence bar: "Decide your evidence bar before you launch: how much spend, how many days, and what counts as a win. Skip that step and 200 ads just gives you 200 inconclusive experiments."
 
@@ -257,3 +257,17 @@ Run the README checks before claiming done: `npx tsc --noEmit`, `npx oxlint app 
 1. **Half the target as the change-versus-kill line.** It is arbitrary and it is visible. The alternative is letting the owner set a "worth adjusting above" number in the bar. Recommendation: ship the fixed rule, watch two or three real memos, and add the field only if the rule misfires on a real campaign.
 2. **Should a kill decision require a note?** It slows the click, and the memo's reason already says why. But the note is what the next Explore session reads, and Greg's `decisions/failed-campaigns.md` is exactly this. Recommendation: require it. One line that saves a repeated mistake is the point of the whole loop.
 3. **Who runs the tick for the public beta?** The owner's own account is the only one that will have campaigns for a while. A GitHub Actions schedule in this repository is the zero-infrastructure option and keeps the secret in repository settings. Recommendation: that, until a host is chosen for M3.
+
+## Implementation notes (October 2026)
+
+What shipped and where it differs from the design above:
+
+- **Code:** `lib/memo.ts` (pure: `generateMemo`, `memoLines`, `refreshMemo`, `decideMemoLine`, `memoDue`), `setEvidenceBar` and `proposedEvidenceBar` in `lib/work.ts`, ops `set_evidence_bar`, `generate_memo`, `refresh_memo`, `decide_memo_line` in the workspace route, `app/evidence-bar-panel.tsx` in Do, `app/memo-panel.tsx` in Portfolio. Tests: `tests/memo.test.mjs`.
+- **No tick yet.** Lazy generation on load is the only producer, so the memo appears on the first load after the week ends, not before the owner logs in. The tick and `memo_schedules` table remain as designed for when that gap matters.
+- **No narration yet.** The memo is code-only; nothing in this slice calls a model.
+- **Compact lines.** A memo line stores a `MemoNumbers` snapshot (counts and sums only) instead of two full `CampaignRow`s, and memos are capped at 12, not 26. Full rows with their unknown strings would have put half a year of memos near the 500,000-character document cap. Caveats carry the unknowns that matter to the line.
+- **Period scoping.** A memo only judges campaigns created by the end of its week, and `generate_memo` refuses to save a memo with no lines. Without this, the first campaign ever created was judged in a memo for the week before it existed. The Portfolio panel shows a "this week so far" preview computed in the browser and never saved, so a new owner sees verdicts immediately.
+- **Unknown at the limit.** When a bar is exhausted and the success metric was never recorded, the verdict is `change` ("never recorded, so it cannot be judged"), not `kill`. Unknown is not zero.
+- **`conversations` with no linked contacts** reads as unknown rather than zero, for the same reason.
+- **Refresh.** `refresh_memo` recomputes a memo's lines from current records and keeps recorded decisions; it covers evidence entered after the memo was prepared, since `add_signal` stamps `observedAt` at entry time.
+- **Revision after load.** Loading can save (code backfill, lazy memo), so every POST now returns the newer of its own revision and the reloaded one. Before this, the action after a lazy memo would fail with "changed in another tab."

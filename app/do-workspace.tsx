@@ -36,6 +36,7 @@ import { executionCostLabel, planExecution } from '@/lib/execution-policy';
 import './do-execution.css';
 import RunnerPanel from './runner-panel';
 import PipelinePanel from './pipeline-panel';
+import EvidenceBarPanel from './evidence-bar-panel';
 
 type Act = (op: string, extra?: Record<string, unknown>) => Promise<boolean>;
 const statusLabels: Record<EndeavorStatus, string> = {
@@ -457,6 +458,12 @@ export default function DoWorkspace({
                   <p>{selected.completionCriteria}</p>
                 </div>
               </div>
+              <EvidenceBarPanel
+                key={selected.id}
+                endeavor={selected}
+                act={act}
+                busy={busy}
+              />
               <div className="execution-hero">
                 <div className="execution-hero-copy">
                   <span className="eyebrow">CONTROLLED AUTONOMY</span>

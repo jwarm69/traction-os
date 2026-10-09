@@ -37,6 +37,8 @@ import {
   type IdeaKind,
   type MarketStatus,
   campaignMetrics,
+  memoVerdicts,
+  type MemoVerdict,
 } from '@/lib/engine';
 import {
   addExploreMessage,
@@ -60,7 +62,9 @@ import {
   reviewResearchCandidate,
   saveArtifact,
   selectIdea,
+  isSuccessMetric,
   setChecklistItem,
+  setEvidenceBar,
   setPortfolio,
   transitionEndeavor,
   updateEndeavor,
@@ -82,6 +86,12 @@ import {
   removeCorrection,
   unmarkExemplar,
 } from '@/lib/knowledge';
+import {
+  decideMemoLine,
+  generateMemo,
+  memoDue,
+  refreshMemo,
+} from '@/lib/memo';
 import { runAI } from '@/lib/ai';
 import {
   beginExecution,
@@ -195,6 +205,14 @@ const nonEmptyStringList = (value: unknown, count = 12, length = 1200) => {
   const values = stringList(value, count, length);
   if (!values.length) throw Error('Add at least one item.');
   return values;
+};
+/** Optional positive limit: blank or absent stays unset rather than zero. */
+const optionalLimit = (value: unknown) =>
+  value === undefined || value === null || value === '' ? undefined : numeric(value);
+const memoVerdict = (value: unknown): MemoVerdict => {
+  if (typeof value !== 'string' || !(memoVerdicts as string[]).includes(value))
+    throw Error('Choose keep, kill, change, test, or wait.');
+  return value as MemoVerdict;
 };
 const endeavorStatus = (value: unknown): EndeavorStatus => {
   const statuses: EndeavorStatus[] = [
@@ -337,6 +355,7 @@ const networkOps = new Set([
   'start_playbook',
   'prepare_guided_work',
   'transition_work',
+  'decide_memo_line',
   'review_artifact',
   'add_observation',
 ]);
@@ -391,6 +410,15 @@ async function loadOrImport(u: User, id?: string) {
       : [],
   };
 }
+/**
+ * Reload after a save. Loading can itself save (campaign code backfill, the
+ * lazy weekly memo), so the reloaded revision may be newer than the one this
+ * request wrote; return whichever is latest so the next action does not conflict.
+ */
+async function reloaded(u: User, id: string, saved: number | null) {
+  const loaded = await loadOrImport(u, id);
+  return { ...loaded, revision: Math.max(saved ?? 0, Number(loaded.revision) || 0) };
+}
 async function loadOwned(u: User, id?: string) {
   await importOwnerStarters(runtime(), u);
   const ai = await budgetStatus(runtime());
@@ -420,8 +448,12 @@ async function loadOwned(u: User, id?: string) {
   if (row) {
     // Endeavors created before campaign codes existed pick up codes on first
     // load, numbered by creation order. A concurrent writer wins; reload then.
+    // Last week's memo is prepared on first load after the week ends when no
+    // scheduled run produced it. Both are spend-free and idempotent.
     const business = JSON.parse(row.data) as BusinessDocument;
-    if (ensureCampaignCodes(business)) {
+    const coded = ensureCampaignCodes(business);
+    const memo = memoDue(business) && generateMemo(business, 'lazy').created;
+    if (coded || memo) {
       const saved = await saveBusiness(
         runtime(),
         u,
@@ -478,7 +510,7 @@ export async function POST(req: Request) {
     if (op === 'create_demo') {
       const b = demoBusiness(),
         rev = await saveBusiness(runtime(), u, b.id, JSON.stringify(b), null);
-      return out({ ...(await loadOrImport(u, b.id)), revision: rev });
+      return out(await reloaded(u, b.id, rev));
     }
     if (op === 'create_business') {
       const url = new URL(txt(x.url, 2000));
@@ -546,7 +578,7 @@ export async function POST(req: Request) {
         JSON.stringify(b),
         null,
       );
-      return out({ ...(await loadOrImport(u, b.id)), revision: rev });
+      return out(await reloaded(u, b.id, rev));
     }
     if (op === 'verify_gmail' && !id) {
       const gmail = await verifyGmail(txt(x.gmailToken, 4000));
@@ -694,8 +726,7 @@ export async function POST(req: Request) {
             'The business kept changing while the run was finishing.',
           );
         return out({
-          ...(await loadOrImport(u, id)),
-          revision: finalRevision,
+          ...(await reloaded(u, id, finalRevision)),
           runId: run.id,
         });
       } catch (e) {
@@ -939,7 +970,7 @@ export async function POST(req: Request) {
           warning:
             'The business changed before the response could be saved. Your message is preserved.',
         });
-      return out({ ...(await loadOrImport(u, id)), revision: finalRevision });
+      return out(await reloaded(u, id, finalRevision));
     } else if (op === 'run_ideation') {
       const prompt =
         txt(x.prompt || '', 2000) ||
@@ -1027,6 +1058,28 @@ export async function POST(req: Request) {
         required(x.endeavorId, 100),
         endeavorStatus(x.status),
         txt(x.reason || '', 2000),
+      );
+    } else if (op === 'set_evidence_bar') {
+      if (!isSuccessMetric(x.successMetric)) throw Error('Choose what counts as a win.');
+      setEvidenceBar(b, required(x.endeavorId, 100), {
+        successMetric: x.successMetric,
+        successTarget: numeric(x.successTarget),
+        maxSpend: optionalLimit(x.maxSpend),
+        maxDays: optionalLimit(x.maxDays),
+        maxContacts: optionalLimit(x.maxContacts),
+      });
+    } else if (op === 'generate_memo') {
+      if (!generateMemo(b, 'owner').created)
+        throw Error('Last week’s memo already exists. Refresh it to pick up new evidence.');
+    } else if (op === 'refresh_memo') {
+      refreshMemo(b, required(x.memoId, 100));
+    } else if (op === 'decide_memo_line') {
+      decideMemoLine(
+        b,
+        required(x.memoId, 100),
+        required(x.endeavorId, 100),
+        memoVerdict(x.verdict),
+        txt(x.note || '', 500),
       );
     } else if (op === 'set_checklist_item') {
       setChecklistItem(
@@ -1982,7 +2035,7 @@ export async function POST(req: Request) {
           },
           409,
         );
-      return out({ ...(await loadOrImport(u, id)), revision: final });
+      return out(await reloaded(u, id, final));
     } else throw Error('Unknown action.');
     const data = JSON.stringify(b);
     if (data.length > 500000)
@@ -1997,7 +2050,7 @@ export async function POST(req: Request) {
       );
     if (networkOps.has(op))
       await contribute(runtime(), u.id, b).catch(() => {});
-    return out({ ...(await loadOrImport(u, id)), revision: rev });
+    return out(await reloaded(u, id, rev));
   } catch (e) {
     console.error('operation failed', e);
     return out(
