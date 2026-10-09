@@ -191,6 +191,7 @@ export default function PipelinePanel({
               <option value="">Not linked</option>
               {endeavors.map((endeavor) => (
                 <option key={endeavor.id} value={endeavor.id}>
+                  {endeavor.code ? `${endeavor.code} · ` : ''}
                   {endeavor.title}
                 </option>
               ))}

@@ -2038,3 +2038,13 @@ textarea:focus-visible {
   .playbook-meta { grid-template-columns: 1fr; }
   .pipeline-contact-head { display: grid; }
 }
+
+.campaign-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em;margin-left:8px}
+.link-button{background:none;border:0;padding:0;color:inherit;font:inherit;text-decoration:underline;cursor:pointer}
+.portfolio-campaigns{display:grid;gap:10px;border:1px solid var(--border);background:var(--card);border-radius:18px;padding:20px}
+.campaign-table-wrap{overflow-x:auto}
+.campaign-table{width:100%;border-collapse:collapse;font-size:13px}
+.campaign-table th,.campaign-table td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+.campaign-table th{font-weight:600;color:var(--muted-foreground);font-size:12px}
+.campaign-table td.campaign-unknown{color:var(--muted-foreground);font-style:italic;cursor:help}
+.campaign-table .campaign-code{margin-left:0}

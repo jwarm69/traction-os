@@ -19,6 +19,88 @@ export function workState(business: BusinessDocument) {
   return business.work || { endeavors: [] };
 }
 
+export const CAMPAIGN_FALLBACK_PREFIX = 'CMP';
+
+/**
+ * Deterministic campaign prefix: the initial of each of the first three words
+ * that start with a letter, uppercased. Fewer than two usable initials falls
+ * back to CMP. Not owner-editable in this slice.
+ */
+export function campaignPrefix(business: Pick<BusinessDocument, 'name'>) {
+  const letters = business.name
+    .split(/\s+/)
+    .map((word) => word.charAt(0))
+    .filter((char) => /\p{L}/u.test(char))
+    .slice(0, 3)
+    .join('')
+    .toUpperCase();
+  return letters.length >= 2 ? letters : CAMPAIGN_FALLBACK_PREFIX;
+}
+
+/** Assigns the next immutable campaign code. Numbers are never reused. */
+export function assignCampaignCode(business: BusinessDocument, endeavor: Endeavor) {
+  const state = work(business);
+  const number = state.nextCampaignNumber || 1;
+  state.nextCampaignNumber = number + 1;
+  endeavor.code = `${campaignPrefix(business)}${String(number).padStart(3, '0')}`;
+  return endeavor.code;
+}
+
+/**
+ * Backfill codes for endeavors created before campaign codes existed, in
+ * createdAt order so numbering matches history. Returns true if anything changed.
+ */
+export function ensureCampaignCodes(business: BusinessDocument) {
+  const missing = (business.work?.endeavors || [])
+    .filter((item) => !item.code)
+    .sort((a, z) => a.createdAt.localeCompare(z.createdAt));
+  for (const endeavor of missing) assignCampaignCode(business, endeavor);
+  return missing.length > 0;
+}
+
+export function endeavorByCode(business: BusinessDocument, code: string) {
+  const wanted = code.trim().toUpperCase();
+  return workState(business).endeavors.find((item) => item.code === wanted);
+}
+
+/**
+ * A copy of the URL carrying the campaign code as UTM parameters. Traction
+ * writes these for the owner to paste; it does not read them back.
+ */
+export function campaignLink(url: string, code: string, medium = 'owner') {
+  let parsed: URL;
+  try {
+    parsed = new URL(url.trim());
+  } catch {
+    throw Error('Campaign link needs a valid https URL.');
+  }
+  if (parsed.protocol !== 'https:')
+    throw Error('Campaign link needs a valid https URL.');
+  if (!code.trim()) throw Error('Campaign link needs a campaign code.');
+  parsed.searchParams.set('utm_source', 'traction');
+  parsed.searchParams.set('utm_medium', slug(medium) || 'owner');
+  parsed.searchParams.set('utm_campaign', code.trim());
+  return parsed.toString();
+}
+
+const slug = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+
+/** Suggested asset name, e.g. AG003_dinner-angle_ugc_v2. Never enforced. */
+export function campaignAssetName(
+  code: string,
+  angle: string,
+  format: string,
+  version = 1,
+) {
+  const safeVersion = Number.isInteger(version) && version > 0 ? version : 1;
+  return `${code.trim()}_${slug(angle) || 'angle'}_${slug(format) || 'format'}_v${safeVersion}`;
+}
+
 function ideaFor(business: BusinessDocument, ideaId: string) {
   const idea = business.explore?.ideas.find((value) => value.id === ideaId);
   if (!idea) throw Error('Explore idea not found.');
@@ -79,6 +161,7 @@ export function selectIdea(
   const at = now();
   const endeavor: Endeavor = {
     id: uid('work'),
+    code: '',
     sourceIdeaId: idea.id,
     sourceIdeaSnapshot: structuredClone(idea),
     sourceIdeaUpdatedAt: idea.updatedAt,
@@ -100,8 +183,9 @@ export function selectIdea(
     createdAt: at,
     updatedAt: at,
   };
+  assignCampaignCode(business, endeavor);
   work(business).endeavors.unshift(endeavor);
-  addLog(business, `Explore idea selected for Do: ${idea.title}.`);
+  addLog(business, `Explore idea selected for Do: ${idea.title} (${endeavor.code}).`);
   return endeavor;
 }
 
@@ -116,6 +200,7 @@ export function prepareGuidedProposal(business: BusinessDocument) {
   const at = now();
   const endeavor: Endeavor = {
     id: uid('work'),
+    code: '',
     sourceGuidedProposalId: proposal.id,
     title: proposal.title,
     kind: 'experiment',
@@ -135,8 +220,9 @@ export function prepareGuidedProposal(business: BusinessDocument) {
     createdAt: at,
     updatedAt: at,
   };
+  assignCampaignCode(business, endeavor);
   work(business).endeavors.unshift(endeavor);
-  addLog(business, `Accepted guided proposal opened in Do: ${proposal.title}.`);
+  addLog(business, `Accepted guided proposal opened in Do: ${proposal.title} (${endeavor.code}).`);
   return endeavor;
 }
 

@@ -1,9 +1,14 @@
+import { campaignMetrics, type CampaignMetric } from './engine.ts';
+
 export type ImportedSignal = {
   metric: string;
   value: number;
   period: string;
   note: string;
   source: string;
+  /** Campaign code as typed by the owner; resolved to an endeavor by the caller. */
+  campaign?: string;
+  campaignMetric?: CampaignMetric;
 };
 /** RFC-style quoted fields and embedded newlines. Reject the entire import on bad data. */
 export function parseSignalsCsv(input: string): ImportedSignal[] {
@@ -79,6 +84,30 @@ export function parseSignalsCsv(input: string): ImportedSignal[] {
       );
     if (get('note').length > 1000 || get('source').length > 500)
       throw new Error(`CSV row ${index + 2} has an oversized note or source.`);
-    return { metric, value, period, note: get('note'), source: get('source') };
+    const campaign = get('campaign').toUpperCase();
+    const campaignMetric = get('campaign_metric').toLowerCase();
+    if (!!campaign !== !!campaignMetric)
+      throw new Error(
+        `CSV row ${index + 2} needs both campaign and campaign_metric, or neither.`,
+      );
+    if (campaign && campaign.length > 12)
+      throw new Error(`CSV row ${index + 2} has an invalid campaign code.`);
+    if (
+      campaignMetric &&
+      !campaignMetrics.includes(campaignMetric as CampaignMetric)
+    )
+      throw new Error(
+        `CSV row ${index + 2} campaign_metric must be one of ${campaignMetrics.join(', ')}.`,
+      );
+    return {
+      metric,
+      value,
+      period,
+      note: get('note'),
+      source: get('source'),
+      ...(campaign
+        ? { campaign, campaignMetric: campaignMetric as CampaignMetric }
+        : {}),
+    };
   });
 }

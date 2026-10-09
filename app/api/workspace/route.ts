@@ -28,9 +28,11 @@ import {
   type Fact,
   type ExploreSuggestion,
   type ArtifactKind,
+  type CampaignMetric,
   type EndeavorStatus,
   type IdeaKind,
   type MarketStatus,
+  campaignMetrics,
 } from '@/lib/engine';
 import {
   addExploreMessage,
@@ -46,7 +48,9 @@ import {
   addObservation,
   addResearchCandidates,
   defaultWorkBrief,
+  endeavorByCode,
   endeavorFor,
+  ensureCampaignCodes,
   prepareGuidedProposal,
   reviewArtifact,
   reviewResearchCandidate,
@@ -211,6 +215,31 @@ const observedDate = (value: unknown) => {
     throw Error('Choose a valid observation date that is not in the future.');
   return date.toISOString();
 };
+const campaignMetric = (value: unknown): CampaignMetric => {
+  if (
+    typeof value === 'string' &&
+    campaignMetrics.includes(value as CampaignMetric)
+  )
+    return value as CampaignMetric;
+  throw Error(`Choose a campaign metric: ${campaignMetrics.join(', ')}.`);
+};
+/** Optional endeavor link; when present it must name an existing endeavor. */
+const optionalEndeavorId = (b: BusinessDocument, value: unknown) => {
+  const endeavorId = txt(value || '', 100);
+  if (!endeavorId) return undefined;
+  endeavorFor(b, endeavorId);
+  return endeavorId;
+};
+/** Both or neither: a campaign metric without a campaign is unclassifiable. */
+const campaignClassification = (b: BusinessDocument, x: Record<string, unknown>) => {
+  const endeavorId = optionalEndeavorId(b, x.endeavorId);
+  const hasMetric =
+    x.campaignMetric !== undefined && x.campaignMetric !== null && x.campaignMetric !== '';
+  if (!endeavorId && !hasMetric) return {};
+  if (!endeavorId || !hasMetric)
+    throw Error('Classify a campaign signal with both a campaign and a campaign metric, or neither.');
+  return { endeavorId, campaignMetric: campaignMetric(x.campaignMetric) };
+};
 function legacy(
   raw: string,
   mem: { kind: string; content: string; updatedAt: string }[],
@@ -365,7 +394,25 @@ async function loadOwned(u: User, id?: string) {
   const chosen = id || summaries[0]?.id;
   if (!chosen)
     return { ai, business: null, revision: 0, businesses: summaries };
-  const row = await loadBusiness(runtime(), u.id, chosen);
+  let row = await loadBusiness(runtime(), u.id, chosen);
+  if (row) {
+    // Endeavors created before campaign codes existed pick up codes on first
+    // load, numbered by creation order. A concurrent writer wins; reload then.
+    const business = JSON.parse(row.data) as BusinessDocument;
+    if (ensureCampaignCodes(business)) {
+      const saved = await saveBusiness(
+        runtime(),
+        u,
+        chosen,
+        JSON.stringify(business),
+        row.revision,
+      );
+      row =
+        saved === null
+          ? await loadBusiness(runtime(), u.id, chosen)
+          : { data: JSON.stringify(business), revision: saved };
+    }
+  }
   return {
     ai,
     business: row ? JSON.parse(row.data) : null,
@@ -510,6 +557,7 @@ export async function POST(req: Request) {
       return out(await loadOrImport(u, id));
     }
     const b = JSON.parse(row.data) as BusinessDocument;
+    ensureCampaignCodes(b);
     if (op === 'run_work') {
       const endeavorId = required(x.endeavorId, 100);
       const instruction = txt(x.instruction || '', 3000);
@@ -1405,6 +1453,7 @@ export async function POST(req: Request) {
       addLog(b, `${f.label} reviewed.`);
     } else if (op === 'add_signal') {
       const v = numeric(x.value);
+      const classification = campaignClassification(b, x);
       b.signals.push({
         id: uid('sig'),
         metric: required(x.metric, 120),
@@ -1414,13 +1463,31 @@ export async function POST(req: Request) {
         source: txt(x.source || 'Owner entry', 500),
         observedAt: new Date().toISOString(),
         confidence: confidence(x.confidence || 'medium'),
+        ...classification,
       });
-      addLog(b, `Signal added: ${txt(x.metric, 120)}.`);
+      addLog(
+        b,
+        classification.endeavorId
+          ? `Signal added: ${txt(x.metric, 120)} (${endeavorFor(b, classification.endeavorId).code} ${classification.campaignMetric}).`
+          : `Signal added: ${txt(x.metric, 120)}.`,
+      );
     } else if (op === 'import_csv') {
       const imported = parseSignalsCsv(txt(x.csv, 50000));
       if (!imported.length) throw Error('CSV contained no signal rows.');
       const observedAt = new Date().toISOString();
-      for (const signal of imported)
+      // Resolve every campaign code before writing anything: one unknown code
+      // rejects the whole file, like any other bad row.
+      const resolved = imported.map((signal, index) => {
+        const { campaign, campaignMetric: metric, ...rest } = signal;
+        if (!campaign) return rest;
+        const endeavor = endeavorByCode(b, campaign);
+        if (!endeavor)
+          throw Error(
+            `CSV row ${index + 2} names campaign ${campaign}, which does not exist in this business.`,
+          );
+        return { ...rest, endeavorId: endeavor.id, campaignMetric: metric };
+      });
+      for (const signal of resolved)
         b.signals.push({
           id: uid('sig'),
           ...signal,
@@ -1544,11 +1611,18 @@ export async function POST(req: Request) {
           .filter((x) => x.status === 'running').length >= 2
       )
         throw Error('Keep at most two experiments running at once.');
+      const experimentEndeavorId = optionalEndeavorId(b, x.endeavorId);
+      if (experimentEndeavorId) e.endeavorId = experimentEndeavorId;
       e.status = 'running';
       e.startedAt = new Date().toISOString();
       const r = b.rounds.find((r) => r.experiments.includes(e))!;
       r.status = 'active';
-      addLog(b, `${e.channel} started.`);
+      addLog(
+        b,
+        experimentEndeavorId
+          ? `${e.channel} started under ${endeavorFor(b, experimentEndeavorId).code}.`
+          : `${e.channel} started.`,
+      );
     } else if (op === 'record_result') {
       const e = b.rounds
         .flatMap((r) => r.experiments)
@@ -1602,6 +1676,8 @@ export async function POST(req: Request) {
           .slice(0, 10),
         diagnosis: b.diagnosis,
       };
+      // Validate the campaign link before spending on research.
+      const prospectEndeavorId = optionalEndeavorId(b, x.endeavorId);
       const a = await runAI(
         runtime(),
         u.id,
@@ -1638,6 +1714,7 @@ export async function POST(req: Request) {
           source: sourceUrl(candidate.source),
           addedAt: new Date().toISOString(),
           status: 'new',
+          ...(prospectEndeavorId ? { endeavorId: prospectEndeavorId } : {}),
         });
       }
       addLog(
@@ -1658,6 +1735,7 @@ export async function POST(req: Request) {
         )
       )
         throw Error('This email address is already in the prospect list.');
+      const prospectEndeavorId = optionalEndeavorId(b, x.endeavorId);
       b.outreach.prospects.push({
         id: uid('prospect'),
         name: required(x.name, 200),
@@ -1667,6 +1745,7 @@ export async function POST(req: Request) {
         source: txt(x.source || 'Owner entry', 500),
         addedAt: new Date().toISOString(),
         status: 'new',
+        ...(prospectEndeavorId ? { endeavorId: prospectEndeavorId } : {}),
       });
       addLog(b, `Prospect added: ${txt(x.name, 200)}.`);
     } else if (op === 'draft_outreach') {

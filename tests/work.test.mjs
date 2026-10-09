@@ -5,6 +5,12 @@ import { createIdea, updateIdea } from '../lib/explore.ts';
 import {
   activeArtifact,
   addChecklistItem,
+  campaignAssetName,
+  campaignLink,
+  campaignPrefix,
+  endeavorByCode,
+  ensureCampaignCodes,
+  prepareGuidedProposal,
   addObservation,
   addResearchCandidates,
   defaultWorkBrief,
@@ -139,4 +145,78 @@ await test('runner results return to the endeavor once, unreviewed, with the sou
   assert.equal(importRunnerResult(business, work.id, 'job_1', result), null);
   assert.equal(importRunnerResult(business, work.id, 'job_2', { text: ' ' }), null);
   assert.equal(work.artifacts.length, 1);
+});
+
+await test('campaign prefixes are deterministic and fall back to CMP', () => {
+  assert.equal(campaignPrefix({ name: 'AlignIQ Golf' }), 'AG');
+  assert.equal(campaignPrefix({ name: 'Bite Club Meal Plan' }), 'BCM');
+  assert.equal(campaignPrefix({ name: 'Tonight' }), 'CMP');
+  assert.equal(campaignPrefix({ name: '  ' }), 'CMP');
+  assert.equal(campaignPrefix({ name: '3rd Street Bakery' }), 'SB');
+  assert.equal(campaignPrefix({ name: 'über cool café' }), 'ÜCC');
+});
+
+await test('campaign codes are assigned on creation, never reused, and backfilled in createdAt order', () => {
+  const business = demoBusiness();
+  business.name = 'AlignIQ Golf';
+  const idea = createIdea(business, input);
+  const brief = defaultWorkBrief(input);
+  const first = selectIdea(business, idea.id, brief);
+  assert.equal(first.code, 'AG001');
+  // Repeated selection returns the same endeavor and consumes no number.
+  assert.equal(selectIdea(business, idea.id, brief).code, 'AG001');
+  assert.equal(business.work.nextCampaignNumber, 2);
+  assert.match(business.log[0].text, /AG001/);
+
+  business.guided = {
+    proposal: { id: 'proposal_1', status: 'accepted', title: 'Pilot', uncertainty: 'U', rationale: 'R',
+      action: 'Invite five coaches.', measurementPlan: 'Track the cohort.', ownerContribution: 'Select coaches',
+      cost: '$0', timeWindow: '14 days', successRule: '3 of 5 complete.', stoppingRule: 'Stop at 14 days.' },
+  };
+  const guided = prepareGuidedProposal(business);
+  assert.equal(guided.code, 'AG002');
+  assert.equal(prepareGuidedProposal(business).code, 'AG002');
+
+  // Stopping an endeavor never frees its number.
+  transitionEndeavor(business, first.id, 'stopped');
+  const second = createIdea(business, { ...input, title: 'Second idea' });
+  assert.equal(selectIdea(business, second.id, brief).code, 'AG003');
+
+  // Pre-code records are backfilled oldest first and the pass is idempotent.
+  const legacy = demoBusiness();
+  legacy.name = 'Tonight';
+  const older = createIdea(legacy, { ...input, title: 'Older' });
+  const newer = createIdea(legacy, { ...input, title: 'Newer' });
+  const a = selectIdea(legacy, older.id, brief);
+  const z = selectIdea(legacy, newer.id, brief);
+  a.createdAt = '2026-01-01T00:00:00.000Z';
+  z.createdAt = '2026-02-01T00:00:00.000Z';
+  delete a.code;
+  delete z.code;
+  delete legacy.work.nextCampaignNumber;
+  assert.equal(ensureCampaignCodes(legacy), true);
+  assert.equal(a.code, 'CMP001');
+  assert.equal(z.code, 'CMP002');
+  assert.equal(ensureCampaignCodes(legacy), false);
+  assert.equal(endeavorByCode(legacy, ' cmp002 ').id, z.id);
+  assert.equal(endeavorByCode(legacy, 'CMP009'), undefined);
+});
+
+await test('campaign links carry UTMs on https only and asset names are slugged', () => {
+  const link = campaignLink('https://example.com/offer?ref=x#top', 'AG003');
+  const url = new URL(link);
+  assert.equal(url.searchParams.get('ref'), 'x');
+  assert.equal(url.searchParams.get('utm_campaign'), 'AG003');
+  assert.equal(url.searchParams.get('utm_source'), 'traction');
+  assert.equal(url.searchParams.get('utm_medium'), 'owner');
+  assert.equal(url.hash, '#top');
+  assert.equal(
+    new URL(campaignLink('https://example.com/', 'AG003', 'Email Newsletter')).searchParams.get('utm_medium'),
+    'email-newsletter',
+  );
+  assert.throws(() => campaignLink('http://example.com/', 'AG003'), /https/);
+  assert.throws(() => campaignLink('not a url', 'AG003'), /https/);
+  assert.throws(() => campaignLink('https://example.com/', '  '), /code/);
+  assert.equal(campaignAssetName('AG003', 'Dinner angle!', 'UGC', 2), 'AG003_dinner-angle_ugc_v2');
+  assert.equal(campaignAssetName('AG003', '', '', 0), 'AG003_angle_format_v1');
 });
