@@ -46,7 +46,10 @@ export default function RunRecordPanel({ b, endeavorId }: { b: BusinessDocument;
           {record.entries.map((entry) => (
             <li key={entry.runId} className={`run-record-entry ${entry.status}`}>
               <div>
-                <strong>{routeLabels[entry.route]}</strong>{' '}
+                <strong>
+                  {routeLabels[entry.route]}
+                  {entry.skillId ? ` · ${entry.skillId.replace('_', ' ')}` : ''}
+                </strong>{' '}
                 <small className="muted">
                   {new Date(entry.startedAt).toLocaleString()} · {entry.status}
                 </small>

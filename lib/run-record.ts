@@ -4,6 +4,7 @@ import type {
   Endeavor,
   EvidenceBar,
   MemoVerdict,
+  SkillId,
   WorkArtifact,
   WorkObservation,
 } from './engine.ts';
@@ -20,6 +21,7 @@ export type RunRecordEntry = {
   /** ExecutionRun id, runner-job:<id> for imported runner results, or version:<id> for a generated draft. */
   runId: string;
   route: 'in_app' | 'runner' | 'draft';
+  skillId?: SkillId;
   startedAt: string;
   finishedAt?: string;
   status: 'succeeded' | 'failed' | 'running';
@@ -129,6 +131,7 @@ export function runRecord(business: BusinessDocument, endeavorId: string, now = 
     entries.push({
       runId: run.id,
       route: 'in_app',
+      ...(run.skillId ? { skillId: run.skillId } : {}),
       startedAt: run.startedAt,
       finishedAt: run.finishedAt,
       status: run.status,
@@ -216,6 +219,7 @@ function entryLines(entry: RunRecordEntry, heading = '###') {
     `${heading} ${day(entry.startedAt)} · ${routeLabels[entry.route]} · ${entry.status}`,
     '',
   ];
+  if (entry.skillId) lines.push(`- Skill: ${entry.skillId.replace('_', ' ')}`);
   if (entry.instruction) lines.push(`- Instruction: ${quote(entry.instruction)}`);
   if (entry.contextRevision !== undefined) lines.push(`- Context revision: ${entry.contextRevision}`);
   if (entry.artifactTitle)

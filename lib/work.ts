@@ -170,6 +170,7 @@ export function selectIdea(
     title: idea.title,
     kind: idea.kind,
     description: idea.description,
+    ...(idea.audience?.trim() ? { audience: idea.audience.trim() } : {}),
     intendedDeliverables: input.intendedDeliverables,
     effortBudget: input.effortBudget,
     completionCriteria: input.completionCriteria,
@@ -207,6 +208,7 @@ export function prepareGuidedProposal(business: BusinessDocument) {
     title: proposal.title,
     kind: 'experiment',
     description: `${proposal.uncertainty} ${proposal.rationale}`,
+    ...(proposal.audience?.trim() ? { audience: proposal.audience.trim() } : {}),
     intendedDeliverables: [proposal.action, proposal.measurementPlan],
     effortBudget: `${proposal.ownerContribution}; ${proposal.cost}; ${proposal.timeWindow}`,
     completionCriteria: `${proposal.successRule} Stop: ${proposal.stoppingRule}`,
@@ -277,10 +279,13 @@ export function updateEndeavor(
     intendedDeliverables: string[];
     effortBudget: string;
     completionCriteria: string;
+    audience?: string;
   },
 ) {
   const endeavor = endeavorFor(business, endeavorId);
-  Object.assign(endeavor, input, { updatedAt: now() });
+  const { audience, ...rest } = input;
+  Object.assign(endeavor, rest, { updatedAt: now() });
+  if (audience !== undefined) endeavor.audience = audience.trim() || undefined;
   addLog(business, `Do brief updated: ${endeavor.title}.`);
   return endeavor;
 }
@@ -398,6 +403,14 @@ export function proposedEvidenceBar(
   return bar;
 }
 
+export function setAudience(business: BusinessDocument, endeavorId: string, audience: string) {
+  const endeavor = endeavorFor(business, endeavorId);
+  endeavor.audience = audience.trim() || undefined;
+  endeavor.updatedAt = now();
+  addLog(business, `Audience ${endeavor.audience ? 'set' : 'cleared'} for ${endeavor.code}.`);
+  return endeavor;
+}
+
 export function setChecklistItem(
   business: BusinessDocument,
   endeavorId: string,
@@ -434,6 +447,7 @@ export function saveArtifact(
     content: string;
     source: 'owner' | 'assistant';
     sourceEvidence?: string[];
+    data?: string;
   },
 ) {
   const endeavor = endeavorFor(business, endeavorId);
@@ -448,6 +462,7 @@ export function saveArtifact(
     content: input.content,
     source: input.source,
     createdAt: at,
+    ...(input.data && input.source === 'assistant' && input.data.length <= 20_000 ? { data: input.data } : {}),
   };
   if (!artifact) {
     artifact = {

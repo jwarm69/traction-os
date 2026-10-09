@@ -2106,3 +2106,21 @@ textarea:focus-visible {
 .run-record-entry.failed{border-left-color:#a33}
 .run-record-entry.running{border-left-color:#3a5f9e}
 .run-record-entry p{margin:0}
+.campaign-brief-panel{display:grid;gap:10px;border:1px solid var(--border);border-radius:14px;padding:16px;background:var(--background)}
+.campaign-brief-panel h3{margin:4px 0}
+.campaign-brief-panel p{margin:0}
+.campaign-brief-audience{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.campaign-brief-audience input{flex:1;min-width:220px}
+.campaign-brief-gaps{margin:0;padding-left:18px;display:grid;gap:4px}
+.campaign-brief-gaps.required{color:#a33;font-size:13px}
+details.campaign-brief-gaps{padding-left:0}
+.campaign-brief-run{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;align-items:center}
+.concept-list{display:grid;gap:10px}
+.concept-card{display:grid;gap:8px;border:1px solid var(--border);border-radius:12px;padding:12px;background:var(--card)}
+.concept-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;align-items:center}
+.concept-hook{margin:0;font-weight:600}
+.concept-flags{margin:0;padding-left:18px;color:#b77717;font-size:12px}
+.concept-card dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;margin:0;font-size:13px}
+.concept-card dt{color:var(--muted-foreground);font-weight:600}
+.concept-card dd{margin:0}
+@media (max-width:640px){.concept-card dl{grid-template-columns:1fr}.concept-card dt{margin-top:6px}}

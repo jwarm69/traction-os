@@ -1,6 +1,6 @@
 # Marketing-engineer adaptation: map and steps 4–7
 
-Status: design map. Built so far: step 1 (campaign codes, PR #6), step 5 (knowledge library, PR #8), step 3's evidence bar and memo core (see [PERFORMANCE-MEMO.md](PERFORMANCE-MEMO.md) for what shipped and what did not), and step 6 (run record and exports; implementation notes under step 6). Steps 2, 4, and 7 remain designs. Steps 1–3 have their own designs: [CAMPAIGN-ID.md](CAMPAIGN-ID.md), [CUSTOMER-LANGUAGE.md](CUSTOMER-LANGUAGE.md), [PERFORMANCE-MEMO.md](PERFORMANCE-MEMO.md). This document adds a second source, checks it against the product and those three designs, records the amendments it forces, and outlines steps 4–7.
+Status: design map. Built so far: step 1 (campaign codes, PR #6), step 5 (knowledge library, PR #8), step 3's evidence bar and memo core (see [PERFORMANCE-MEMO.md](PERFORMANCE-MEMO.md) for what shipped and what did not), step 4 (campaign brief skill), and step 6 (run record and exports); implementation notes sit under steps 4 and 6. Steps 2 and 7 remain designs. Steps 1–3 have their own designs: [CAMPAIGN-ID.md](CAMPAIGN-ID.md), [CUSTOMER-LANGUAGE.md](CUSTOMER-LANGUAGE.md), [PERFORMANCE-MEMO.md](PERFORMANCE-MEMO.md). This document adds a second source, checks it against the product and those three designs, records the amendments it forces, and outlines steps 4–7.
 
 Sources:
 
@@ -149,6 +149,18 @@ Two touches in the Do workspace (`app/do-workspace.tsx`):
 - `tests/business-api.mjs`: run against the demo path, promote a concept, assert the new artifact and the `skillId` on the run.
 
 Out of scope: image or video generation, automatic landing pages (a landing-page prototype is a `product_improvement` endeavor and already routes to the Codex runner), and any second skill. The skill object exists so the next one is a file, not a refactor.
+
+### Implementation notes (October 2026)
+
+Built as `lib/skills.ts` with `tests/skills.test.mjs`, `app/campaign-brief-panel.tsx` in Do, ops `set_audience` and `promote_concept`, and a `skillId` on `run_work`. Differences from the outline above:
+
+- The offer input is satisfied by a confirmed `offer` or `product` fact; when no confirmed fact has a category yet, any confirmed fact counts, so libraries from before step 5 are not blocked.
+- The instruction lists the evidence the model may cite, as `fact:<id>` lines from the context pack plus shortlisted research URLs, so evidence can be checked. The UI shows a cited fact by its label.
+- `executionPrompt` takes the skill's output format and correction scope, so `campaign_brief` corrections reach the run and `customer_language` corrections do not.
+- Output with no concepts is rejected; everything else is kept and flagged. Over-length fields are cut to the limit and flagged.
+- Owner versions never carry `data`, so promoting works from the latest assistant version only; after an owner rewrite the concepts are no longer actionable, which is the honest state.
+- Demo businesses return fictional concepts, so the whole path runs without a provider. A live run has not been exercised yet; it needs an OpenAI key and spends up to $0.125 of the shared ledger per brief.
+- `audience` is set through the brief panel (`set_audience`); `update_work` also accepts it.
 
 ## Step 5 — Knowledge library
 

@@ -278,7 +278,11 @@ export type ArtifactVersion = {
   content: string;
   createdAt: string;
   source: 'owner' | 'assistant';
+  /** Validated structured output from a skill run, as JSON. Owner versions never carry it. */
+  data?: string;
 };
+/** Bounded run instructions with input gaps and output checks. See lib/skills.ts. */
+export type SkillId = 'campaign_brief';
 export type WorkArtifact = {
   id: string;
   kind: ArtifactKind;
@@ -301,6 +305,7 @@ export type ExecutionRun = {
   contextSnapshot?: string;
   finishedAt?: string;
   instruction: string;
+  skillId?: SkillId;
   artifactId?: string;
   error?: string;
   nextDecision?: string;
@@ -408,6 +413,8 @@ export type Endeavor = {
   title: string;
   kind: IdeaKind;
   description: string;
+  /** Who the work is for. Seeded from the idea or guided proposal; editable. */
+  audience?: string;
   intendedDeliverables: string[];
   effortBudget: string;
   completionCriteria: string;

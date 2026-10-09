@@ -1,4 +1,4 @@
-import type { Endeavor } from './engine.ts';
+import type { Endeavor, SkillId } from './engine.ts';
 
 export type ExecutionRoute = 'in_app' | 'codex' | 'computer' | 'human';
 export type ExecutionPlan = {
@@ -22,7 +22,7 @@ const textFor = (endeavor: Endeavor) =>
     endeavor.completionCriteria,
   ].join('\n');
 
-export function planExecution(endeavor: Endeavor): ExecutionPlan {
+export function planExecution(endeavor: Endeavor, skillId?: SkillId): ExecutionPlan {
   if (['completed', 'stopped', 'blocked'].includes(endeavor.status))
     return {
       route: 'human',
@@ -31,6 +31,28 @@ export function planExecution(endeavor: Endeavor): ExecutionPlan {
       maximumSharedReservationMicros: 0,
       requiresApproval: true,
     };
+
+  // Three distinct, evidence-traced concepts is judgment, not copying. The
+  // brief is internal drafting, so it stays in-app even when the work itself
+  // later calls for an external action.
+  if (skillId === 'campaign_brief')
+    return endeavor.kind === 'product_improvement'
+      ? {
+          route: 'human',
+          label: 'Owner decision',
+          reason: 'A campaign brief serves marketing work. Product improvements go to the Codex runner.',
+          maximumSharedReservationMicros: 0,
+          requiresApproval: true,
+        }
+      : {
+          route: 'in_app',
+          label: 'OpenAI campaign brief',
+          reason: 'Three distinct concepts traced to evidence is a judgment call, so it uses the strategic model.',
+          provider: 'openai',
+          workload: 'strategic',
+          maximumSharedReservationMicros: 125_000,
+          requiresApproval: false,
+        };
 
   if (endeavor.kind === 'product_improvement')
     return {
