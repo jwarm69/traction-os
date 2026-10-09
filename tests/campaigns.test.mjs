@@ -123,3 +123,24 @@ await test('the campaign table orders by status then recency and is read-only', 
   assert.equal(JSON.stringify(business), before);
   assert.deepEqual(campaignTable(demoBusiness()), []);
 });
+
+await test('rows flag stale in-progress work and honor a date window', () => {
+  const { business, a } = fixture();
+  const NOW = Date.parse('2026-09-01T00:00:00.000Z');
+  signal(business, { metric: 'Ad spend', value: 100, endeavorId: a.id, campaignMetric: 'spend', observedAt: '2026-08-01T00:00:00.000Z' });
+  signal(business, { metric: 'Ad spend', value: 40, endeavorId: a.id, campaignMetric: 'spend', observedAt: '2026-08-20T00:00:00.000Z' });
+  // Not in progress: never stale.
+  assert.equal(campaignRow(business, a.id, undefined, NOW).stale, false);
+  transitionEndeavor(business, a.id, 'ready');
+  transitionEndeavor(business, a.id, 'in_progress');
+  assert.equal(campaignRow(business, a.id, undefined, NOW).stale, false);
+  const later = Date.parse('2026-09-15T00:00:00.000Z');
+  assert.equal(campaignRow(business, a.id, undefined, later).stale, true);
+  const windowed = campaignRow(business, a.id, { since: '2026-08-10T00:00:00.000Z' }, NOW);
+  assert.equal(windowed.spend, 40);
+  assert.equal(windowed.lastEvidenceAt, '2026-08-20T00:00:00.000Z');
+  const none = campaignRow(business, a.id, { until: '2026-07-01T00:00:00.000Z' }, NOW);
+  assert.equal(none.spend, null);
+  assert.equal(none.lastEvidenceAt, null);
+  assert.equal(campaignTable(business, { since: '2026-08-10T00:00:00.000Z' }, NOW)[0].spend, 40);
+});

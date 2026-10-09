@@ -3,11 +3,46 @@ export type Provenance = {
   observedAt: string;
   confidence: 'low' | 'medium' | 'high';
 };
+/** Knowledge-library categories. Facts without one read as 'other'. */
+export type FactCategory =
+  | 'product'
+  | 'positioning'
+  | 'customer_language'
+  | 'offer'
+  | 'voice'
+  | 'proof'
+  | 'other';
+export const factCategories: FactCategory[] = [
+  'product',
+  'positioning',
+  'customer_language',
+  'offer',
+  'voice',
+  'proof',
+  'other',
+];
 export type Fact = Provenance & {
   id: string;
   label: string;
   value: string;
   status: 'unreviewed' | 'confirmed' | 'corrected';
+  category?: FactCategory;
+};
+/** Which runs a standing correction applies to. Skill ids join this list as skills exist. */
+export type CorrectionScope = 'all' | 'customer_language' | 'campaign_brief';
+export const correctionScopes: CorrectionScope[] = [
+  'all',
+  'customer_language',
+  'campaign_brief',
+];
+/** An owner-written rule that every future run in its scope must follow. */
+export type Correction = {
+  id: string;
+  text: string;
+  scope: CorrectionScope;
+  createdAt: string;
+  /** Artifact whose edit prompted the correction, when there is one. */
+  fromArtifactId?: string;
 };
 /** Closed vocabulary for campaign-level measurements. Free-text metric stays free. */
 export type CampaignMetric =
@@ -254,6 +289,8 @@ export type WorkArtifact = {
   createdAt: string;
   updatedAt: string;
   sourceEvidence?: string[];
+  /** Owner-marked approved example. Requires reviewedAt. The why is the point. */
+  exemplar?: { why: string; markedAt: string };
 };
 export type ExecutionRun = {
   id: string;
@@ -389,6 +426,7 @@ export type BusinessDocument = {
   portfolio?: PortfolioState;
   marketLabel?: string;
   markets?: Market[];
+  corrections?: Correction[];
   facts: Fact[];
   signals: Signal[];
   diagnosis?: Diagnosis;

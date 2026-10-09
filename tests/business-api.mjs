@@ -183,6 +183,27 @@ try {
     { csv: 'metric,value,period,campaign,campaign_metric\nAd spend,30,P,ZZZ999,spend' },
     400,
   );
+  // Knowledge library round trip: a categorized fact, a standing correction,
+  // and an approved example reach the next run's recorded instruction.
+  await act('add_fact', {
+    label: 'Dinner quote',
+    value: 'I am tired of taking calls during dinner',
+    source: 'Integration test',
+    category: 'customer_language',
+  });
+  assert.equal(current.facts.at(-1).category, 'customer_language');
+  await act('add_fact', { label: 'Bad', value: 'x', category: 'nonsense' }, 400);
+  await act('add_correction', { text: 'Integration rule: never promise outcomes.', scope: 'all' });
+  assert.equal(current.corrections.length, 1);
+  await act('mark_exemplar', { endeavorId, artifactId, why: 'Short, specific, and leads with the problem.' });
+  assert.equal(current.work.endeavors[0].artifacts[0].exemplar.why, 'Short, specific, and leads with the problem.');
+  await act('run_work', { endeavorId, instruction: 'Integration fixture run.' });
+  const recorded = current.work.endeavors[0].executionRuns.at(-1).contextSnapshot || '';
+  assert.match(recorded, /Integration rule: never promise outcomes\./);
+  assert.match(recorded, /tired of taking calls during dinner/);
+  await act('unmark_exemplar', { endeavorId, artifactId });
+  await act('remove_correction', { correctionId: current.corrections[0].id });
+  assert.equal(current.corrections.length, 0);
   await act('transition_work', { endeavorId, status: 'completed' });
   await act('set_portfolio', {
     priority: 'now',

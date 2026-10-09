@@ -29,6 +29,10 @@ import {
   type ExploreSuggestion,
   type ArtifactKind,
   type CampaignMetric,
+  type CorrectionScope,
+  type FactCategory,
+  correctionScopes,
+  factCategories,
   type EndeavorStatus,
   type IdeaKind,
   type MarketStatus,
@@ -71,6 +75,13 @@ import {
   verifyGmail,
 } from '@/lib/connections';
 import { parseSignalsCsv } from '@/lib/csv';
+import {
+  addCorrection,
+  contextPack,
+  markExemplar,
+  removeCorrection,
+  unmarkExemplar,
+} from '@/lib/knowledge';
 import { runAI } from '@/lib/ai';
 import {
   beginExecution,
@@ -214,6 +225,17 @@ const observedDate = (value: unknown) => {
   if (!Number.isFinite(date.getTime()) || date.getTime() > Date.now() + 60000)
     throw Error('Choose a valid observation date that is not in the future.');
   return date.toISOString();
+};
+const optionalFactCategory = (value: unknown): FactCategory | undefined => {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value === 'string' && factCategories.includes(value as FactCategory))
+    return value as FactCategory;
+  throw Error(`Choose a fact category: ${factCategories.join(', ')}.`);
+};
+const correctionScope = (value: unknown): CorrectionScope => {
+  if (typeof value === 'string' && correctionScopes.includes(value as CorrectionScope))
+    return value as CorrectionScope;
+  throw Error(`Choose a correction scope: ${correctionScopes.join(', ')}.`);
 };
 const campaignMetric = (value: unknown): CampaignMetric => {
   if (
@@ -773,12 +795,10 @@ export async function POST(req: Request) {
             budget: b.budget,
             notes: b.notes,
           },
-          facts: b.facts.slice(-12).map((fact) => ({
-            label: fact.label,
-            value: fact.value,
-            source: fact.source,
-            status: fact.status,
-          })),
+          unreviewedFacts: b.facts
+            .filter((fact) => fact.status === 'unreviewed')
+            .slice(-8)
+            .map((fact) => ({ label: fact.label, value: fact.value, source: fact.source })),
           markets: b.markets || [],
           ideas: (b.explore?.ideas || []).slice(0, 12).map((idea) => ({
             id: idea.id,
@@ -841,7 +861,7 @@ export async function POST(req: Request) {
                 runtime(),
                 u.id,
                 txt(x.key || '', 500),
-                `Act as a proactive growth strategist. Return {reply,suggestions:[{title,kind,description,audience,outcome}],recommendedSuggestionIndex,recommendationReason,nextQuestion}. Give a concise point of view, 2-4 genuinely distinct routes when useful, recommend exactly one route when suggestions exist, and ask no more than one high-leverage nextQuestion. Do not make the owner fill in information you can reasonably infer from saved context. kind must be research, content, outreach, campaign, experiment, or product_improvement. Suggestions are proposals, not researched evidence. Do not invent sources, contacts, audience sizes, prices, partnerships, results, or completed work. Owner statements and confirmed facts may guide ideas; unreviewed facts remain provisional. Do not silently change business facts or existing ideas. Keep market-specific evidence attached to its named market. Context: ${JSON.stringify(context)}`,
+                `Act as a proactive growth strategist. Return {reply,suggestions:[{title,kind,description,audience,outcome}],recommendedSuggestionIndex,recommendationReason,nextQuestion}. Give a concise point of view, 2-4 genuinely distinct routes when useful, recommend exactly one route when suggestions exist, and ask no more than one high-leverage nextQuestion. Do not make the owner fill in information you can reasonably infer from saved context. kind must be research, content, outreach, campaign, experiment, or product_improvement. Suggestions are proposals, not researched evidence. Do not invent sources, contacts, audience sizes, prices, partnerships, results, or completed work. Owner statements and confirmed facts may guide ideas; unreviewed facts remain provisional. Do not silently change business facts or existing ideas. Follow every standing correction. Keep market-specific evidence attached to its named market. Context: ${JSON.stringify(context)}\nKnowledge library:\n${contextPack(b).text}`,
               );
       } catch (error) {
         return out({
@@ -960,7 +980,7 @@ export async function POST(req: Request) {
               runtime(),
               u.id,
               txt(x.key || '', 500),
-              `Run a broad but practical ideation pass for this business. Return {reply,suggestions:[{title,kind,description,audience,outcome}]}, exactly 3 distinct possibilities spanning acquisition, content/creator distribution, or product improvement as appropriate. These are proposals, not evidence or authorized work. Do not invent sources, contacts, partnerships, current capabilities, metrics, prices, or results. Treat each saved market as a distinct operating context; do not blend evidence or progress across markets. Respect confirmed constraints, label unknowns, and favor directions the owner can validate cheaply. Owner emphasis: ${prompt}. ${insightContext(await networkInsights(runtime()).catch(() => []))} Context: ${JSON.stringify({ name: b.name, url: b.url, goal: b.goal, budget: b.budget, notes: b.notes, markets: b.markets || [], facts: b.facts.filter((fact) => fact.status !== 'unreviewed').slice(0, 12), existingIdeas: b.explore?.ideas.slice(0, 12) || [] })}`,
+              `Run a broad but practical ideation pass for this business. Return {reply,suggestions:[{title,kind,description,audience,outcome}]}, exactly 3 distinct possibilities spanning acquisition, content/creator distribution, or product improvement as appropriate. These are proposals, not evidence or authorized work. Do not invent sources, contacts, partnerships, current capabilities, metrics, prices, or results. Treat each saved market as a distinct operating context; do not blend evidence or progress across markets. Respect confirmed constraints, label unknowns, and favor directions the owner can validate cheaply. Follow every standing correction. Owner emphasis: ${prompt}. ${insightContext(await networkInsights(runtime()).catch(() => []))} Context: ${JSON.stringify({ name: b.name, url: b.url, goal: b.goal, budget: b.budget, notes: b.notes, markets: b.markets || [], existingIdeas: b.explore?.ideas.slice(0, 12) || [] })}\nKnowledge library:\n${contextPack(b).text}`,
             );
       const suggestions = Array.isArray(answer.suggestions)
         ? answer.suggestions.slice(0, 3).map((value) => {
@@ -1030,9 +1050,7 @@ export async function POST(req: Request) {
       const kind = artifactKind(x.kind);
       const title = required(x.title, 200);
       const instruction = txt(x.instruction || '', 3000);
-      const confirmedFacts = b.facts
-        .filter((fact) => fact.status !== 'unreviewed')
-        .slice(0, 12);
+      const knowledge = contextPack(b);
       const answer =
         b.mode === 'demo'
           ? {
@@ -1042,7 +1060,7 @@ export async function POST(req: Request) {
               runtime(),
               u.id,
               txt(x.key || '', 500),
-              `Create one editable ${kind} artifact. Return {content}. Do not claim it was sent, published, deployed, researched, or approved. Do not invent product capabilities, contacts, partnerships, performance, prices, or results. Keep market-specific claims attached to their named market. Mark unknowns for owner review. Use Markdown and make the deliverable immediately editable. Owner instruction: ${instruction || 'Prepare the smallest useful draft.'} Context: ${JSON.stringify({ business: { name: b.name, goal: b.goal, budget: b.budget, notes: b.notes, markets: b.markets || [] }, confirmedFacts, endeavor })}`,
+              `Create one editable ${kind} artifact. Return {content}. Do not claim it was sent, published, deployed, researched, or approved. Do not invent product capabilities, contacts, partnerships, performance, prices, or results. Keep market-specific claims attached to their named market. Mark unknowns for owner review. Facts marked "verify" are old; use them only with that caveat. Follow every standing correction. Use Markdown and make the deliverable immediately editable. Owner instruction: ${instruction || 'Prepare the smallest useful draft.'} Context: ${JSON.stringify({ business: { name: b.name, goal: b.goal, budget: b.budget, notes: b.notes, markets: b.markets || [] }, endeavor })}\nKnowledge library:\n${knowledge.text}`,
             );
       saveArtifact(b, endeavor.id, {
         artifactId: txt(x.artifactId || '', 100) || undefined,
@@ -1428,6 +1446,7 @@ export async function POST(req: Request) {
       invalidateGuidedBrief(b);
       addLog(b, 'Business direction updated. Existing rounds kept unchanged.');
     } else if (op === 'add_fact') {
+      const category = optionalFactCategory(x.category);
       b.facts.push({
         id: uid('fact'),
         label: required(x.label, 100),
@@ -1436,6 +1455,7 @@ export async function POST(req: Request) {
         observedAt: new Date().toISOString(),
         confidence: confidence(x.confidence || 'medium'),
         status: 'confirmed',
+        ...(category ? { category } : {}),
       });
       invalidateGuidedBrief(b);
       addLog(b, `Owner fact added: ${txt(x.label, 100)}.`);
@@ -1449,8 +1469,38 @@ export async function POST(req: Request) {
       f.confidence = confidence(x.confidence);
       f.status = x.status;
       f.observedAt = new Date().toISOString();
+      if (x.category !== undefined) {
+        const category = optionalFactCategory(x.category);
+        if (category) f.category = category;
+        else delete f.category;
+      }
       invalidateGuidedBrief(b);
       addLog(b, `${f.label} reviewed.`);
+    } else if (op === 'mark_exemplar') {
+      markExemplar(
+        b,
+        required(x.endeavorId, 100),
+        required(x.artifactId, 100),
+        required(x.why, 300),
+      );
+    } else if (op === 'unmark_exemplar') {
+      unmarkExemplar(b, required(x.endeavorId, 100), required(x.artifactId, 100));
+    } else if (op === 'add_correction') {
+      const fromArtifactId = txt(x.fromArtifactId || '', 100);
+      if (
+        fromArtifactId &&
+        !(b.work?.endeavors || []).some((item) =>
+          item.artifacts.some((artifact) => artifact.id === fromArtifactId),
+        )
+      )
+        throw Error('Artifact not found.');
+      addCorrection(b, {
+        text: required(x.text, 300),
+        scope: correctionScope(x.scope || 'all'),
+        ...(fromArtifactId ? { fromArtifactId } : {}),
+      });
+    } else if (op === 'remove_correction') {
+      removeCorrection(b, required(x.correctionId, 100));
     } else if (op === 'add_signal') {
       const v = numeric(x.value);
       const classification = campaignClassification(b, x);

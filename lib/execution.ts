@@ -1,3 +1,4 @@
+import { contextPack, STALE_FACT_DAYS } from './knowledge.ts';
 import { addLog, uid, type BusinessDocument, type Endeavor, type ExecutionRun } from './engine.ts';
 import { endeavorFor, saveArtifact } from './work.ts';
 
@@ -91,12 +92,12 @@ export function failExecution(
 }
 
 export function executionPrompt(business: BusinessDocument, endeavor: Endeavor, instruction: string) {
-  return `Execute one bounded internal work run. Return exactly one JSON object shaped like {"content":"editable draft text","nextDecision":"one concise decision for the owner"}. Both values must be plain strings: content must be at most 18,000 characters and nextDecision at most 1,500 characters. Do not nest sections inside content as an object or array; write the artifact as readable Markdown inside the content string. Create a useful editable artifact, with no claim that anything was sent, published, deployed, purchased, or approved. Cite supporting source URLs beside researched claims. Preserve unknowns for owner review. ${instruction || 'Produce the smallest useful next deliverable.'} Context: ${JSON.stringify({
+  const knowledge = contextPack(business);
+  return `Execute one bounded internal work run. Return exactly one JSON object shaped like {"content":"editable draft text","nextDecision":"one concise decision for the owner"}. Both values must be plain strings: content must be at most 18,000 characters and nextDecision at most 1,500 characters. Do not nest sections inside content as an object or array; write the artifact as readable Markdown inside the content string. Create a useful editable artifact, with no claim that anything was sent, published, deployed, purchased, or approved. Cite supporting source URLs beside researched claims. Preserve unknowns for owner review. Facts marked "verify" are older than ${STALE_FACT_DAYS} days: use them only with that caveat. Follow every standing correction. ${instruction || 'Produce the smallest useful next deliverable.'} Context: ${JSON.stringify({
     business: { name: business.name, url: business.url, goal: business.goal, budget: business.budget, notes: business.notes },
-    confirmedFacts: business.facts.filter((fact) => fact.status !== 'unreviewed').slice(0, 12),
     markets: business.markets || [],
     endeavor: { title: endeavor.title, kind: endeavor.kind, description: endeavor.description, deliverables: endeavor.intendedDeliverables, budget: endeavor.effortBudget, completion: endeavor.completionCriteria, recentArtifacts: endeavor.artifacts.slice(-3).map((a) => ({ title: a.title, content: a.versions.at(-1)?.content?.slice(0, 1600) })), recentObservations: endeavor.observations.slice(0, 3) },
-  })}`.slice(0, 28000);
+  })}\nKnowledge library:\n${knowledge.text}`.slice(0, 28000);
 }
 
 /** Keep safe structured provider output as an editable artifact. */

@@ -15,6 +15,11 @@ import { workState } from './work.ts';
  * "no evidence recorded", never zero. Nothing in this module attributes an
  * outcome to a campaign causally; it only joins records that carry the same id.
  */
+export const STALE_EVIDENCE_DAYS = 14;
+
+/** Optional window on signal observedAt and stage event timestamps. */
+export type CampaignWindow = { since?: string; until?: string };
+
 export type CampaignRow = {
   endeavorId: string;
   code: string;
@@ -41,6 +46,8 @@ export type CampaignRow = {
   /** Human-readable reasons a cell is null, for the UI to show on hover. */
   unknowns: string[];
   lastEvidenceAt: string | null;
+  /** True for in_progress work whose last evidence is missing or older than STALE_EVIDENCE_DAYS. */
+  stale: boolean;
 };
 
 const statusOrder: Record<EndeavorStatus, number> = {
@@ -76,9 +83,14 @@ export function isClassified(
 const later = (a: string | null, b: string | undefined) =>
   !b ? a : !a || b > a ? b : a;
 
+const inWindow = (at: string, window?: CampaignWindow) =>
+  !window || ((!window.since || at >= window.since) && (!window.until || at <= window.until));
+
 export function campaignRow(
   business: BusinessDocument,
   endeavorId: string,
+  window?: CampaignWindow,
+  now = Date.now(),
 ): CampaignRow {
   const endeavor = workState(business).endeavors.find(
     (item) => item.id === endeavorId,
@@ -94,14 +106,18 @@ export function campaignRow(
     won = 0,
     lost = 0;
   let lastEvidenceAt: string | null = null;
+  const reachedIn = (contact: (typeof contacts)[number], stage: Parameters<typeof reachedStage>[1]) =>
+    window
+      ? contact.stageHistory.some((event) => event.stage === stage && inWindow(event.at, window))
+      : reachedStage(contact, stage);
   for (const contact of contacts) {
-    if (reachedStage(contact, 'contacted')) contacted += 1;
-    if (reachedStage(contact, 'replied')) replied += 1;
-    if (reachedStage(contact, 'conversation')) conversations += 1;
-    if (contact.stage === 'won') won += 1;
-    if (contact.stage === 'lost') lost += 1;
+    if (reachedIn(contact, 'contacted')) contacted += 1;
+    if (reachedIn(contact, 'replied')) replied += 1;
+    if (reachedIn(contact, 'conversation')) conversations += 1;
+    if (window ? reachedIn(contact, 'won') : contact.stage === 'won') won += 1;
+    if (window ? reachedIn(contact, 'lost') : contact.stage === 'lost') lost += 1;
     for (const event of contact.stageHistory)
-      lastEvidenceAt = later(lastEvidenceAt, event.at);
+      if (inWindow(event.at, window)) lastEvidenceAt = later(lastEvidenceAt, event.at);
   }
 
   const sums: Record<CampaignMetric, number | null> = {
@@ -114,11 +130,17 @@ export function campaignRow(
   };
   for (const signal of business.signals) {
     if (!isClassified(signal) || signal.endeavorId !== endeavorId) continue;
+    if (!inWindow(signal.observedAt, window)) continue;
     sums[signal.campaignMetric] = (sums[signal.campaignMetric] || 0) + signal.value;
     lastEvidenceAt = later(lastEvidenceAt, signal.observedAt);
   }
   for (const observation of endeavor.observations)
-    lastEvidenceAt = later(lastEvidenceAt, observation.observedAt);
+    if (inWindow(observation.observedAt, window))
+      lastEvidenceAt = later(lastEvidenceAt, observation.observedAt);
+  const stale =
+    endeavor.status === 'in_progress' &&
+    (!lastEvidenceAt ||
+      now - new Date(lastEvidenceAt).getTime() > STALE_EVIDENCE_DAYS * 24 * 60 * 60 * 1000);
 
   const unknowns: string[] = [];
   for (const metric of campaignMetrics)
@@ -164,10 +186,15 @@ export function campaignRow(
     costPerDeal,
     unknowns,
     lastEvidenceAt,
+    stale,
   };
 }
 
-export function campaignTable(business: BusinessDocument): CampaignRow[] {
+export function campaignTable(
+  business: BusinessDocument,
+  window?: CampaignWindow,
+  now = Date.now(),
+): CampaignRow[] {
   return workState(business)
     .endeavors.slice()
     .sort(
@@ -175,5 +202,5 @@ export function campaignTable(business: BusinessDocument): CampaignRow[] {
         statusOrder[a.status] - statusOrder[z.status] ||
         z.createdAt.localeCompare(a.createdAt),
     )
-    .map((item) => campaignRow(business, item.id));
+    .map((item) => campaignRow(business, item.id, window, now));
 }
