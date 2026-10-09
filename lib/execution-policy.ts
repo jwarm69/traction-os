@@ -1,4 +1,4 @@
-import type { Endeavor } from './engine.ts';
+import type { Endeavor, SkillId } from './engine.ts';
 
 export type ExecutionRoute = 'in_app' | 'codex' | 'computer' | 'human';
 export type ExecutionPlan = {
@@ -22,7 +22,7 @@ const textFor = (endeavor: Endeavor) =>
     endeavor.completionCriteria,
   ].join('\n');
 
-export function planExecution(endeavor: Endeavor): ExecutionPlan {
+export function planExecution(endeavor: Endeavor, skillId?: SkillId): ExecutionPlan {
   if (['completed', 'stopped', 'blocked'].includes(endeavor.status))
     return {
       route: 'human',
@@ -30,6 +30,18 @@ export function planExecution(endeavor: Endeavor): ExecutionPlan {
       reason: `This work is ${endeavor.status}; reopen or unblock it before spending or acting.`,
       maximumSharedReservationMicros: 0,
       requiresApproval: true,
+    };
+
+  if (skillId === 'campaign_brief')
+    return {
+      route: 'in_app',
+      label: 'OpenAI campaign brief',
+      reason:
+        'Three distinct, evidence-traced concepts is a judgment task. Required inputs are checked before any reservation.',
+      provider: 'openai',
+      workload: 'strategic',
+      maximumSharedReservationMicros: 125_000,
+      requiresApproval: false,
     };
 
   if (endeavor.kind === 'product_improvement')

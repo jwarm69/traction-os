@@ -1,5 +1,5 @@
 import { contextPack, STALE_FACT_DAYS } from './knowledge.ts';
-import { addLog, uid, type BusinessDocument, type Endeavor, type ExecutionRun } from './engine.ts';
+import { addLog, uid, type BusinessDocument, type CorrectionScope, type Endeavor, type ExecutionRun } from './engine.ts';
 import { endeavorFor, saveArtifact } from './work.ts';
 
 export const EXECUTION_LEASE_MS = 150_000;
@@ -91,8 +91,13 @@ export function failExecution(
   return run;
 }
 
-export function executionPrompt(business: BusinessDocument, endeavor: Endeavor, instruction: string) {
-  const knowledge = contextPack(business);
+export function executionPrompt(
+  business: BusinessDocument,
+  endeavor: Endeavor,
+  instruction: string,
+  scope?: CorrectionScope,
+) {
+  const knowledge = contextPack(business, scope);
   return `Execute one bounded internal work run. Return exactly one JSON object shaped like {"content":"editable draft text","nextDecision":"one concise decision for the owner"}. Both values must be plain strings: content must be at most 18,000 characters and nextDecision at most 1,500 characters. Do not nest sections inside content as an object or array; write the artifact as readable Markdown inside the content string. Create a useful editable artifact, with no claim that anything was sent, published, deployed, purchased, or approved. Cite supporting source URLs beside researched claims. Preserve unknowns for owner review. Facts marked "verify" are older than ${STALE_FACT_DAYS} days: use them only with that caveat. Follow every standing correction. ${instruction || 'Produce the smallest useful next deliverable.'} Context: ${JSON.stringify({
     business: { name: business.name, url: business.url, goal: business.goal, budget: business.budget, notes: business.notes },
     markets: business.markets || [],
@@ -119,6 +124,7 @@ export function saveExecutionArtifact(
   content: string,
   title: string,
   sourceEvidence: string[],
+  data?: string,
 ) {
-  return saveArtifact(business, endeavorId, { kind, title, content, source: 'assistant', sourceEvidence });
+  return saveArtifact(business, endeavorId, { kind, title, content, source: 'assistant', sourceEvidence, data });
 }

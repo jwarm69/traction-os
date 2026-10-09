@@ -168,6 +168,7 @@ export function selectIdea(
     title: idea.title,
     kind: idea.kind,
     description: idea.description,
+    ...(idea.audience.trim() ? { audience: idea.audience.trim() } : {}),
     intendedDeliverables: input.intendedDeliverables,
     effortBudget: input.effortBudget,
     completionCriteria: input.completionCriteria,
@@ -205,6 +206,7 @@ export function prepareGuidedProposal(business: BusinessDocument) {
     title: proposal.title,
     kind: 'experiment',
     description: `${proposal.uncertainty} ${proposal.rationale}`,
+    ...(proposal.audience?.trim() ? { audience: proposal.audience.trim() } : {}),
     intendedDeliverables: [proposal.action, proposal.measurementPlan],
     effortBudget: `${proposal.ownerContribution}; ${proposal.cost}; ${proposal.timeWindow}`,
     completionCriteria: `${proposal.successRule} Stop: ${proposal.stoppingRule}`,
@@ -272,10 +274,16 @@ export function updateEndeavor(
     intendedDeliverables: string[];
     effortBudget: string;
     completionCriteria: string;
+    audience?: string;
   },
 ) {
   const endeavor = endeavorFor(business, endeavorId);
-  Object.assign(endeavor, input, { updatedAt: now() });
+  const { audience, ...rest } = input;
+  Object.assign(endeavor, rest, { updatedAt: now() });
+  if (audience !== undefined) {
+    if (audience.trim()) endeavor.audience = audience.trim();
+    else delete endeavor.audience;
+  }
   addLog(business, `Do brief updated: ${endeavor.title}.`);
   return endeavor;
 }
@@ -316,6 +324,8 @@ export function saveArtifact(
     content: string;
     source: 'owner' | 'assistant';
     sourceEvidence?: string[];
+    /** Validated skill output as JSON, at most 20,000 characters. */
+    data?: string;
   },
 ) {
   const endeavor = endeavorFor(business, endeavorId);
@@ -324,12 +334,15 @@ export function saveArtifact(
     ? endeavor.artifacts.find((value) => value.id === input.artifactId)
     : undefined;
   if (input.artifactId && !artifact) throw Error('Artifact not found.');
+  if (input.data && input.data.length > 20000)
+    throw Error('Structured artifact data is too large to save.');
   const version = {
     id: uid('version'),
     number: (artifact?.versions.at(-1)?.number || 0) + 1,
     content: input.content,
     source: input.source,
     createdAt: at,
+    ...(input.data ? { data: input.data } : {}),
   };
   if (!artifact) {
     artifact = {

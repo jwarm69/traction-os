@@ -32,6 +32,7 @@ import {
 } from '@/lib/work';
 import { buildAgentBrief } from '@/lib/agent-brief';
 import { contextPack } from '@/lib/knowledge';
+import { campaignBrief, parseCampaignBriefData } from '@/lib/skills';
 import { executionCostLabel, planExecution } from '@/lib/execution-policy';
 import './do-execution.css';
 import RunnerPanel from './runner-panel';
@@ -264,6 +265,17 @@ export default function DoWorkspace({
   const [exemplarWhy, setExemplarWhy] = useState('');
   const [correctionText, setCorrectionText] = useState('');
   const knowledge = useMemo(() => contextPack(b), [b]);
+  const [audienceDraft, setAudienceDraft] = useState<string | null>(null);
+  const briefGaps = useMemo(
+    () => (selected ? campaignBrief.gaps(b, selected) : []),
+    [b, selected],
+  );
+  const briefBlocked = briefGaps.some((gap) => gap.required);
+  const briefPlan = selected ? planExecution(selected, 'campaign_brief') : undefined;
+  const runBrief = async () => {
+    if (!selected) return;
+    await act('run_work', { endeavorId: selected.id, skillId: 'campaign_brief' });
+  };
   const campaignUrl = (() => {
     if (!selected?.code) return null;
     try {
@@ -449,6 +461,50 @@ export default function DoWorkspace({
               )}
               <div className="work-brief-grid">
                 <div>
+                  <strong>Audience</strong>
+                  {audienceDraft === null ? (
+                    <p>
+                      {selected.audience || (
+                        <span className="muted">Not set. The campaign brief needs one.</span>
+                      )}{' '}
+                      <button
+                        type="button"
+                        className="link-button"
+                        onClick={() => setAudienceDraft(selected.audience || '')}
+                      >
+                        edit
+                      </button>
+                    </p>
+                  ) : (
+                    <div className="inline-add">
+                      <Input
+                        value={audienceDraft}
+                        maxLength={1200}
+                        onChange={(event) => setAudienceDraft(event.target.value)}
+                        placeholder="Who exactly this work is for"
+                      />
+                      <Button
+                        size="sm"
+                        disabled={busy}
+                        onClick={async () => {
+                          if (
+                            await act('set_audience', {
+                              endeavorId: selected.id,
+                              audience: audienceDraft,
+                            })
+                          )
+                            setAudienceDraft(null);
+                        }}
+                      >
+                        Save
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setAudienceDraft(null)}>
+                        Cancel
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                <div>
                   <strong>Effort / budget</strong>
                   <p>{selected.effortBudget}</p>
                 </div>
@@ -504,6 +560,40 @@ export default function DoWorkspace({
                   </Button>
                 </div>
               </div>
+              {executionPlan?.route === 'in_app' && briefPlan && (
+                <div className="skill-card">
+                  <div className="skill-card-copy">
+                    <span className="eyebrow">SKILL</span>
+                    <h3>Prepare campaign brief</h3>
+                    <p className="muted">
+                      Three distinct concepts, each traced to a confirmed fact
+                      or shortlisted source, each with a production brief.
+                      Saved as a draft for review.
+                    </p>
+                    <p className="execution-cost">
+                      {briefPlan.label} · {executionCostLabel(briefPlan)}
+                    </p>
+                    {briefGaps.length > 0 && (
+                      <ul className="skill-gaps">
+                        {briefGaps.map((gap) => (
+                          <li key={gap.key} className={gap.required ? 'required' : ''}>
+                            <strong>{gap.required ? 'Needed' : 'Unknown'}:</strong>{' '}
+                            {gap.label}. <span className="muted">{gap.hint}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <Button
+                    size="lg"
+                    disabled={busy || !aiReady || briefBlocked || !!runningLeaseActive}
+                    onClick={runBrief}
+                    title={briefBlocked ? 'Fill the needed inputs first.' : undefined}
+                  >
+                    <Play size={16} fill="currentColor" /> Prepare campaign brief
+                  </Button>
+                </div>
+              )}
               <details className="knowledge-preview">
                 <summary>
                   What the agent will see ({knowledge.facts.length} fact
@@ -630,7 +720,78 @@ export default function DoWorkspace({
                           {item.reviewedAt ? 'Reviewed' : 'Needs review'}
                         </small>
                       </div>
-                      <pre>{version?.content}</pre>
+                      {(() => {
+                        const brief = parseCampaignBriefData(version);
+                        if (!brief) return <pre>{version?.content}</pre>;
+                        return (
+                          <div className="concept-list">
+                            {brief.concepts.map((concept, index) => {
+                              const marker = `concept:${item.id}:${index}`;
+                              const promoted = selected.artifacts.find((other) =>
+                                other.sourceEvidence?.includes(marker),
+                              );
+                              return (
+                                <article className="concept" key={marker}>
+                                  <h5>
+                                    {index + 1}. {concept.angle || 'untitled'}
+                                  </h5>
+                                  <p><strong>Insight.</strong> {concept.insight}</p>
+                                  <p><strong>Hook.</strong> {concept.hook}</p>
+                                  <p><strong>Visual.</strong> {concept.visual}</p>
+                                  <p><strong>Copy.</strong> {concept.copy}</p>
+                                  <p><strong>Production brief.</strong> {concept.productionBrief}</p>
+                                  <p><strong>Hypothesis.</strong> {concept.hypothesis}</p>
+                                  <small>
+                                    Evidence: {concept.evidence.length ? concept.evidence.join(', ') : 'none cited'}
+                                  </small>
+                                  {concept.flags.length > 0 && (
+                                    <ul className="concept-flags">
+                                      {concept.flags.map((flag) => (
+                                        <li key={flag}>{flag}</li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                  {promoted ? (
+                                    <small className="muted">
+                                      Promoted as {promoted.title}
+                                    </small>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={busy}
+                                      onClick={() =>
+                                        act('promote_concept', {
+                                          endeavorId: selected.id,
+                                          artifactId: item.id,
+                                          index,
+                                        })
+                                      }
+                                    >
+                                      Promote to production brief
+                                    </Button>
+                                  )}
+                                </article>
+                              );
+                            })}
+                            {brief.gaps.length > 0 && (
+                              <p className="small muted">
+                                Wanted and did not have: {brief.gaps.join('; ')}
+                              </p>
+                            )}
+                            {brief.claimsToVerify.length > 0 && (
+                              <p className="small context-warning">
+                                Claims to verify (older than 90 days):{' '}
+                                {brief.claimsToVerify.map((claim) => claim.label).join(', ')}
+                              </p>
+                            )}
+                            <details>
+                              <summary className="small muted">Markdown</summary>
+                              <pre>{version?.content}</pre>
+                            </details>
+                          </div>
+                        );
+                      })()}
                       {evidence.length > 0 && (
                         <div className="artifact-evidence">
                           <strong>Provider source links</strong>

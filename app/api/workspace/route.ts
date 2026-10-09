@@ -75,6 +75,7 @@ import {
   verifyGmail,
 } from '@/lib/connections';
 import { parseSignalsCsv } from '@/lib/csv';
+import { demoCampaignBriefAnswer, promoteConcept, skillFor } from '@/lib/skills';
 import {
   addCorrection,
   contextPack,
@@ -582,17 +583,24 @@ export async function POST(req: Request) {
     ensureCampaignCodes(b);
     if (op === 'run_work') {
       const endeavorId = required(x.endeavorId, 100);
-      const instruction = txt(x.instruction || '', 3000);
       const initial = JSON.parse(JSON.stringify(b)) as BusinessDocument;
       const target = endeavorFor(initial, endeavorId);
-      const executionPlan = planExecution(target);
+      // A skill run checks its required inputs before any reservation or lease.
+      const skill = x.skillId ? skillFor(x.skillId) : undefined;
+      const skillGaps = skill ? skill.gaps(initial, target) : [];
+      const blocking = skillGaps.find((gap) => gap.required);
+      if (blocking) throw Error(blocking.hint);
+      const instruction = skill
+        ? skill.instruction(initial, target, skillGaps)
+        : txt(x.instruction || '', 3000);
+      const executionPlan = planExecution(target, skill?.id);
       if (executionPlan.route !== 'in_app')
         throw Error(
           executionPlan.route === 'human'
             ? executionPlan.reason
             : `This work is routed to ${executionPlan.label}. Use the paired desktop runner.`,
         );
-      const prompt = executionPrompt(initial, target, instruction);
+      const prompt = executionPrompt(initial, target, instruction, skill?.id);
       const run = beginExecution(
         initial,
         endeavorId,
@@ -600,6 +608,7 @@ export async function POST(req: Request) {
         row.revision,
         prompt,
       );
+      if (skill) run.skillId = skill.id;
       const startedData = JSON.stringify(initial);
       if (startedData.length > 500000)
         throw Error(
@@ -624,12 +633,14 @@ export async function POST(req: Request) {
         const search = executionPlan.workload === 'research';
         const answer =
           initial.mode === 'demo'
-            ? {
-                content: `# ${target.title}\n\n## Next useful deliverable\nThis is a fictional demo run. Prepare the smallest owner-reviewed ${target.kind.replace('_', ' ')} deliverable described in the Do brief.\n\n## Owner review\nVerify claims, links, names, and any external action before use.`,
-                nextDecision:
-                  'Review the draft and decide whether to continue, revise, or test it.',
-                __searchSources: [],
-              }
+            ? skill
+              ? { ...demoCampaignBriefAnswer(initial, target), __searchSources: [] }
+              : {
+                  content: `# ${target.title}\n\n## Next useful deliverable\nThis is a fictional demo run. Prepare the smallest owner-reviewed ${target.kind.replace('_', ' ')} deliverable described in the Do brief.\n\n## Owner review\nVerify claims, links, names, and any external action before use.`,
+                  nextDecision:
+                    'Review the draft and decide whether to continue, revise, or test it.',
+                  __searchSources: [],
+                }
             : await runAI(runtime(), u.id, txt(x.key || '', 500), prompt, {
                 search,
                 workload: executionPlan.workload || 'routine',
@@ -644,8 +655,13 @@ export async function POST(req: Request) {
           throw Error(
             'The run returned no inspectable provider source evidence.',
           );
-        const content = executionText(answer.content, 'content', 20000);
-        const nextDecision = executionText(answer.nextDecision, 'nextDecision', 2000);
+        const parsed = skill ? skill.parse(answer, initial, target) : undefined;
+        const content = parsed
+          ? executionText(parsed.content, 'content', 20000)
+          : executionText(answer.content, 'content', 20000);
+        const nextDecision = parsed
+          ? executionText(parsed.nextDecision, 'nextDecision', 2000)
+          : executionText(answer.nextDecision, 'nextDecision', 2000);
         let finalRevision: number | null = null;
         for (
           let attempt = 0;
@@ -660,18 +676,27 @@ export async function POST(req: Request) {
           const artifact = saveExecutionArtifact(
             completed,
             endeavorId,
-            latestTarget.kind === 'research'
-              ? 'research_notes'
-              : latestTarget.kind === 'outreach'
-                ? 'outreach'
-                : latestTarget.kind === 'content' ||
-                    latestTarget.kind === 'campaign'
-                  ? 'content'
-                  : 'product_brief',
+            skill
+              ? skill.artifactKind
+              : latestTarget.kind === 'research'
+                ? 'research_notes'
+                : latestTarget.kind === 'outreach'
+                  ? 'outreach'
+                  : latestTarget.kind === 'content' ||
+                      latestTarget.kind === 'campaign'
+                    ? 'content'
+                    : 'product_brief',
             content,
-            `${latestTarget.title} — run draft`,
+            skill
+              ? `${latestTarget.title} — ${skill.title.toLowerCase()}`
+              : `${latestTarget.title} — run draft`,
             sources,
+            parsed?.data,
           );
+          if (skill) {
+            const completedRun = latestTarget.executionRuns?.find((item) => item.id === run.id);
+            if (completedRun) completedRun.skillId = skill.id;
+          }
           finishExecution(completed, endeavorId, run.id, {
             artifactId: artifact.id,
             nextDecision,
@@ -1020,7 +1045,23 @@ export async function POST(req: Request) {
         intendedDeliverables: stringList(x.intendedDeliverables, 10, 1200),
         effortBudget: required(x.effortBudget, 1200),
         completionCriteria: required(x.completionCriteria, 2000),
+        ...(x.audience !== undefined ? { audience: txt(x.audience || '', 1200) } : {}),
       });
+    } else if (op === 'set_audience') {
+      const endeavor = endeavorFor(b, required(x.endeavorId, 100));
+      updateEndeavor(b, endeavor.id, {
+        title: endeavor.title,
+        description: endeavor.description,
+        intendedDeliverables: endeavor.intendedDeliverables,
+        effortBudget: endeavor.effortBudget,
+        completionCriteria: endeavor.completionCriteria,
+        audience: txt(x.audience || '', 1200),
+      });
+    } else if (op === 'promote_concept') {
+      const index = Number(x.index);
+      if (!Number.isInteger(index) || index < 0)
+        throw Error('Choose a concept from this brief.');
+      promoteConcept(b, required(x.endeavorId, 100), required(x.artifactId, 100), index);
     } else if (op === 'transition_work') {
       transitionEndeavor(
         b,
