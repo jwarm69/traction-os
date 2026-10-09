@@ -123,10 +123,16 @@ function CampaignTable({ b }: { b: BusinessDocument }) {
                 money
               />
               <Cell value={row.costPerDeal} row={row} label="Cost per deal" money />
-              <td>
+              <td className={row.stale ? 'campaign-stale' : undefined}>
                 {row.lastEvidenceAt
                   ? new Date(row.lastEvidenceAt).toLocaleDateString()
                   : 'none'}
+                {row.stale && (
+                  <small title="In progress with no evidence in the last 14 days">
+                    {' '}
+                    · stale{row.lastEvidenceAt ? ` since ${new Date(row.lastEvidenceAt).toLocaleDateString()}` : ''}
+                  </small>
+                )}
               </td>
             </tr>
           ))}

@@ -21,8 +21,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
-import { campaignMetrics, type BusinessDocument, type Fact } from '@/lib/engine';
+import {
+  campaignMetrics,
+  correctionScopes,
+  factCategories,
+  type BusinessDocument,
+  type CorrectionScope,
+  type Fact,
+  type FactCategory,
+} from '@/lib/engine';
 import { campaignMetricLabels } from '@/lib/campaigns';
+import { categoryLabels, factCategory, isStaleFact } from '@/lib/knowledge';
 import type { Insight } from '@/lib/network';
 import type { Playbook } from '@/lib/playbooks';
 import { ownerQueue } from '@/lib/owner-queue';
@@ -730,6 +739,17 @@ function Today({
 }
 function Memory({ b, act }: { b: BusinessDocument; act: Act }) {
   const [facts, setFacts] = useState<Fact[]>(b.facts);
+  const [filter, setFilter] = useState<FactCategory | ''>('');
+  const [correction, setCorrection] = useState('');
+  const [scope, setScope] = useState<CorrectionScope>('all');
+  const exemplars = (b.work?.endeavors || []).flatMap((endeavor) =>
+    endeavor.artifacts
+      .filter((artifact) => artifact.exemplar)
+      .map((artifact) => ({ endeavor, artifact })),
+  );
+  const visible = facts
+    .map((f, i) => ({ f, i }))
+    .filter(({ f }) => !filter || factCategory(f) === filter);
   return (
     <section className="panel">
       <div className="section-title">
@@ -780,6 +800,14 @@ function Memory({ b, act }: { b: BusinessDocument; act: Act }) {
           <Input id="new-fact-label" placeholder="Label" />
           <Input id="new-fact-value" placeholder="What is true?" />
           <Input id="new-fact-source" placeholder="Source or Owner input" />
+          <select id="new-fact-category" defaultValue="" aria-label="Category">
+            <option value="">Category (optional)</option>
+            {factCategories.map((category) => (
+              <option key={category} value={category}>
+                {categoryLabels[category]}
+              </option>
+            ))}
+          </select>
           <Button
             onClick={() =>
               act('add_fact', {
@@ -792,6 +820,9 @@ function Memory({ b, act }: { b: BusinessDocument; act: Act }) {
                 source: (
                   document.querySelector('#new-fact-source') as HTMLInputElement
                 ).value,
+                category:
+                  (document.querySelector('#new-fact-category') as HTMLSelectElement)
+                    .value || undefined,
                 confidence: 'medium',
               })
             }
@@ -800,7 +831,29 @@ function Memory({ b, act }: { b: BusinessDocument; act: Act }) {
           </Button>
         </div>
       </details>
-      {facts.map((f, i) => (
+      <div className="category-filter" aria-label="Filter facts by category">
+        <button
+          type="button"
+          className={`pill${filter === '' ? ' active' : ''}`}
+          onClick={() => setFilter('')}
+        >
+          All ({facts.length})
+        </button>
+        {factCategories.map((category) => {
+          const count = facts.filter((f) => factCategory(f) === category).length;
+          return count ? (
+            <button
+              type="button"
+              key={category}
+              className={`pill${filter === category ? ' active' : ''}`}
+              onClick={() => setFilter(category)}
+            >
+              {categoryLabels[category]} ({count})
+            </button>
+          ) : null;
+        })}
+      </div>
+      {visible.map(({ f, i }) => (
         <article className="memory-row" key={f.id}>
           <div className="memory-meta">
             <strong>{f.label}</strong>
@@ -810,6 +863,31 @@ function Memory({ b, act }: { b: BusinessDocument; act: Act }) {
               {f.status}
             </span>
             <span className="pill">{f.confidence} confidence</span>
+            {isStaleFact(f) && (
+              <span
+                className="pill amber"
+                title="Older than 90 days. Runs are told to verify it."
+              >
+                stale
+              </span>
+            )}
+            <select
+              aria-label="Fact category"
+              value={factCategory(f)}
+              onChange={(e) =>
+                setFacts(
+                  facts.map((x, j) =>
+                    j === i ? { ...x, category: e.target.value as FactCategory } : x,
+                  ),
+                )
+              }
+            >
+              {factCategories.map((category) => (
+                <option key={category} value={category}>
+                  {categoryLabels[category]}
+                </option>
+              ))}
+            </select>
           </div>
           <Textarea
             value={f.value}
@@ -846,6 +924,7 @@ function Memory({ b, act }: { b: BusinessDocument; act: Act }) {
                   value: f.value,
                   source: f.source,
                   confidence: f.confidence,
+                  category: factCategory(f),
                   status:
                     f.value === b.facts[i].value ? 'confirmed' : 'corrected',
                 })
@@ -856,6 +935,92 @@ function Memory({ b, act }: { b: BusinessDocument; act: Act }) {
           </div>
         </article>
       ))}
+      <div className="library-section">
+        <h3>Approved examples</h3>
+        <p className="small muted">
+          Reviewed artifacts you marked as examples. The reason is what the
+          assistant learns from. Mark them from the Do tab.
+        </p>
+        {exemplars.length ? (
+          exemplars.map(({ endeavor, artifact }) => (
+            <article className="memory-row" key={artifact.id}>
+              <div className="memory-meta">
+                <strong>{artifact.title}</strong>
+                <span className="pill">{endeavor.code || endeavor.title}</span>
+                <small>
+                  Marked {new Date(artifact.exemplar!.markedAt).toLocaleDateString()}
+                </small>
+              </div>
+              <p>Why it works: {artifact.exemplar!.why}</p>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                  act('unmark_exemplar', {
+                    endeavorId: endeavor.id,
+                    artifactId: artifact.id,
+                  })
+                }
+              >
+                Unmark
+              </Button>
+            </article>
+          ))
+        ) : (
+          <p className="small muted">None yet.</p>
+        )}
+      </div>
+      <div className="library-section">
+        <h3>Standing corrections</h3>
+        <p className="small muted">
+          Rules every future run must follow. Write the one line that would
+          have prevented the last edit you made.
+        </p>
+        {(b.corrections || []).map((item) => (
+          <article className="memory-row" key={item.id}>
+            <div className="memory-meta">
+              <span className="pill">{item.scope}</span>
+              <small>{new Date(item.createdAt).toLocaleDateString()}</small>
+            </div>
+            <p>{item.text}</p>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => act('remove_correction', { correctionId: item.id })}
+            >
+              Remove
+            </Button>
+          </article>
+        ))}
+        <div className="signal-form">
+          <Input
+            value={correction}
+            maxLength={300}
+            onChange={(e) => setCorrection(e.target.value)}
+            placeholder="Never promise results in 30 days; we cannot guarantee that."
+          />
+          <select
+            aria-label="Correction scope"
+            value={scope}
+            onChange={(e) => setScope(e.target.value as CorrectionScope)}
+          >
+            {correctionScopes.map((value) => (
+              <option key={value} value={value}>
+                {value === 'all' ? 'All runs' : value.replace('_', ' ')}
+              </option>
+            ))}
+          </select>
+          <Button
+            disabled={!correction.trim()}
+            onClick={async () => {
+              if (await act('add_correction', { text: correction, scope }))
+                setCorrection('');
+            }}
+          >
+            Save correction
+          </Button>
+        </div>
+      </div>
     </section>
   );
 }

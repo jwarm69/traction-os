@@ -2048,3 +2048,14 @@ textarea:focus-visible {
 .campaign-table th{font-weight:600;color:var(--muted-foreground);font-size:12px}
 .campaign-table td.campaign-unknown{color:var(--muted-foreground);font-style:italic;cursor:help}
 .campaign-table .campaign-code{margin-left:0}
+
+.category-filter{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px}
+.category-filter .pill{cursor:pointer;background:var(--card);border:1px solid var(--border)}
+.category-filter .pill.active{border-color:var(--foreground);box-shadow:0 0 0 1px var(--foreground)}
+.memory-meta select{font-size:12px;padding:2px 6px;border:1px solid var(--border);border-radius:8px;background:var(--card)}
+.library-section{display:grid;gap:10px;border-top:1px solid var(--border);padding-top:18px;margin-top:18px}
+.library-section h3{margin:0}
+.knowledge-preview{border:1px solid var(--border);border-radius:14px;padding:12px 16px;background:var(--card)}
+.knowledge-preview summary{cursor:pointer;font-weight:600;font-size:13px}
+.knowledge-preview pre{white-space:pre-wrap;max-height:320px;overflow:auto;font-family:inherit;font-size:12px;background:var(--muted);padding:12px;border-radius:10px;margin-top:8px}
+.campaign-table td.campaign-stale small{color:#a33}

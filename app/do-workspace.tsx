@@ -31,6 +31,7 @@ import {
   sourceIdeaChanged,
 } from '@/lib/work';
 import { buildAgentBrief } from '@/lib/agent-brief';
+import { contextPack } from '@/lib/knowledge';
 import { executionCostLabel, planExecution } from '@/lib/execution-policy';
 import './do-execution.css';
 import RunnerPanel from './runner-panel';
@@ -223,16 +224,26 @@ export default function DoWorkspace({
     setArtifactInstruction('');
   };
   const saveDraft = async () => {
+    const editedArtifactId = artifactId || undefined;
+    const correction = correctionText.trim();
     if (
       await act('save_artifact', {
         endeavorId: selected.id,
-        artifactId: artifactId || undefined,
+        artifactId: editedArtifactId,
         kind: artifactKind,
         title: artifactTitle,
         content: artifactContent,
       })
-    )
+    ) {
+      if (correction && editedArtifactId)
+        await act('add_correction', {
+          text: correction,
+          scope: 'all',
+          fromArtifactId: editedArtifactId,
+        });
+      setCorrectionText('');
       clearArtifact();
+    }
   };
   const generate = async () => {
     if (
@@ -249,6 +260,10 @@ export default function DoWorkspace({
   const copy = async (content: string) =>
     navigator.clipboard.writeText(content);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [exemplarWhyFor, setExemplarWhyFor] = useState('');
+  const [exemplarWhy, setExemplarWhy] = useState('');
+  const [correctionText, setCorrectionText] = useState('');
+  const knowledge = useMemo(() => contextPack(b), [b]);
   const campaignUrl = (() => {
     if (!selected?.code) return null;
     try {
@@ -489,6 +504,21 @@ export default function DoWorkspace({
                   </Button>
                 </div>
               </div>
+              <details className="knowledge-preview">
+                <summary>
+                  What the agent will see ({knowledge.facts.length} fact
+                  {knowledge.facts.length === 1 ? '' : 's'},{' '}
+                  {knowledge.exemplars.length} example
+                  {knowledge.exemplars.length === 1 ? '' : 's'},{' '}
+                  {knowledge.corrections.length} correction
+                  {knowledge.corrections.length === 1 ? '' : 's'})
+                </summary>
+                <p className="small muted">
+                  Every run reads this library first. Fix a wrong fact under
+                  Memory before running.
+                </p>
+                <pre>{knowledge.text}</pre>
+              </details>
               <RunnerPanel b={b} selected={selected} revision={revision} />
               {runs.length > 0 && (
                 <div className="execution-runs" aria-live="polite">
@@ -656,7 +686,67 @@ export default function DoWorkspace({
                             <Check size={14} /> Mark reviewed
                           </Button>
                         )}
+                        {item.reviewedAt && !item.exemplar && exemplarWhyFor !== item.id && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setExemplarWhyFor(item.id);
+                              setExemplarWhy('');
+                            }}
+                          >
+                            Mark as approved example
+                          </Button>
+                        )}
+                        {item.exemplar && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title={`Why it works: ${item.exemplar.why}`}
+                            onClick={() =>
+                              act('unmark_exemplar', {
+                                endeavorId: selected.id,
+                                artifactId: item.id,
+                              })
+                            }
+                          >
+                            Approved example · unmark
+                          </Button>
+                        )}
                       </div>
+                      {exemplarWhyFor === item.id && (
+                        <div className="inline-add">
+                          <Input
+                            value={exemplarWhy}
+                            maxLength={300}
+                            onChange={(event) => setExemplarWhy(event.target.value)}
+                            placeholder="Why does this example work? (10 to 300 characters)"
+                          />
+                          <Button
+                            size="sm"
+                            disabled={busy || exemplarWhy.trim().length < 10}
+                            onClick={async () => {
+                              if (
+                                await act('mark_exemplar', {
+                                  endeavorId: selected.id,
+                                  artifactId: item.id,
+                                  why: exemplarWhy,
+                                })
+                              )
+                                setExemplarWhyFor('');
+                            }}
+                          >
+                            Save example
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setExemplarWhyFor('')}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      )}
                     </article>
                   );
                 })}
@@ -702,6 +792,14 @@ export default function DoWorkspace({
                     }
                     placeholder="Optional instructions for an AI draft"
                   />
+                  {artifact && (
+                    <Input
+                      value={correctionText}
+                      maxLength={300}
+                      onChange={(event) => setCorrectionText(event.target.value)}
+                      placeholder="Optional: a standing correction so the next run does not need this edit"
+                    />
+                  )}
                   <div className="idea-actions">
                     <Button
                       variant="outline"
