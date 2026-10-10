@@ -37,6 +37,8 @@ import {
   type IdeaKind,
   type MarketStatus,
   campaignMetrics,
+  memoVerdicts,
+  type MemoVerdict,
 } from '@/lib/engine';
 import {
   addExploreMessage,
@@ -60,7 +62,10 @@ import {
   reviewResearchCandidate,
   saveArtifact,
   selectIdea,
+  isSuccessMetric,
+  setAudience,
   setChecklistItem,
+  setEvidenceBar,
   setPortfolio,
   transitionEndeavor,
   updateEndeavor,
@@ -82,6 +87,19 @@ import {
   removeCorrection,
   unmarkExemplar,
 } from '@/lib/knowledge';
+import {
+  demoCampaignBrief,
+  isSkillId,
+  promoteConcept,
+  skillKinds,
+  skills,
+} from '@/lib/skills';
+import {
+  decideMemoLine,
+  generateMemo,
+  memoDue,
+  refreshMemo,
+} from '@/lib/memo';
 import { runAI } from '@/lib/ai';
 import {
   beginExecution,
@@ -195,6 +213,14 @@ const nonEmptyStringList = (value: unknown, count = 12, length = 1200) => {
   const values = stringList(value, count, length);
   if (!values.length) throw Error('Add at least one item.');
   return values;
+};
+/** Optional positive limit: blank or absent stays unset rather than zero. */
+const optionalLimit = (value: unknown) =>
+  value === undefined || value === null || value === '' ? undefined : numeric(value);
+const memoVerdict = (value: unknown): MemoVerdict => {
+  if (typeof value !== 'string' || !(memoVerdicts as string[]).includes(value))
+    throw Error('Choose keep, kill, change, test, or wait.');
+  return value as MemoVerdict;
 };
 const endeavorStatus = (value: unknown): EndeavorStatus => {
   const statuses: EndeavorStatus[] = [
@@ -337,6 +363,7 @@ const networkOps = new Set([
   'start_playbook',
   'prepare_guided_work',
   'transition_work',
+  'decide_memo_line',
   'review_artifact',
   'add_observation',
 ]);
@@ -391,6 +418,15 @@ async function loadOrImport(u: User, id?: string) {
       : [],
   };
 }
+/**
+ * Reload after a save. Loading can itself save (campaign code backfill, the
+ * lazy weekly memo), so the reloaded revision may be newer than the one this
+ * request wrote; return whichever is latest so the next action does not conflict.
+ */
+async function reloaded(u: User, id: string, saved: number | null) {
+  const loaded = await loadOrImport(u, id);
+  return { ...loaded, revision: Math.max(saved ?? 0, Number(loaded.revision) || 0) };
+}
 async function loadOwned(u: User, id?: string) {
   await importOwnerStarters(runtime(), u);
   const ai = await budgetStatus(runtime());
@@ -420,8 +456,12 @@ async function loadOwned(u: User, id?: string) {
   if (row) {
     // Endeavors created before campaign codes existed pick up codes on first
     // load, numbered by creation order. A concurrent writer wins; reload then.
+    // Last week's memo is prepared on first load after the week ends when no
+    // scheduled run produced it. Both are spend-free and idempotent.
     const business = JSON.parse(row.data) as BusinessDocument;
-    if (ensureCampaignCodes(business)) {
+    const coded = ensureCampaignCodes(business);
+    const memo = memoDue(business) && generateMemo(business, 'lazy').created;
+    if (coded || memo) {
       const saved = await saveBusiness(
         runtime(),
         u,
@@ -478,7 +518,7 @@ export async function POST(req: Request) {
     if (op === 'create_demo') {
       const b = demoBusiness(),
         rev = await saveBusiness(runtime(), u, b.id, JSON.stringify(b), null);
-      return out({ ...(await loadOrImport(u, b.id)), revision: rev });
+      return out(await reloaded(u, b.id, rev));
     }
     if (op === 'create_business') {
       const url = new URL(txt(x.url, 2000));
@@ -546,7 +586,7 @@ export async function POST(req: Request) {
         JSON.stringify(b),
         null,
       );
-      return out({ ...(await loadOrImport(u, b.id)), revision: rev });
+      return out(await reloaded(u, b.id, rev));
     }
     if (op === 'verify_gmail' && !id) {
       const gmail = await verifyGmail(txt(x.gmailToken, 4000));
@@ -583,22 +623,49 @@ export async function POST(req: Request) {
     if (op === 'run_work') {
       const endeavorId = required(x.endeavorId, 100);
       const instruction = txt(x.instruction || '', 3000);
+      if (x.skillId !== undefined && x.skillId !== '' && !isSkillId(x.skillId))
+        throw Error('Unknown skill.');
+      const skillId = isSkillId(x.skillId) ? x.skillId : undefined;
+      const skill = skillId ? skills[skillId] : undefined;
       const initial = JSON.parse(JSON.stringify(b)) as BusinessDocument;
       const target = endeavorFor(initial, endeavorId);
-      const executionPlan = planExecution(target);
+      const executionPlan = planExecution(target, skillId);
       if (executionPlan.route !== 'in_app')
         throw Error(
           executionPlan.route === 'human'
             ? executionPlan.reason
             : `This work is routed to ${executionPlan.label}. Use the paired desktop runner.`,
         );
-      const prompt = executionPrompt(initial, target, instruction);
+      // A skill's required inputs are checked before the run starts, so a
+      // missing brief never reserves budget.
+      let runInstruction = instruction;
+      if (skill && skillId) {
+        if (!skillKinds[skillId].includes(target.kind))
+          throw Error(`${skill.title} serves ${skillKinds[skillId].join(', ').replace('_', ' ')} work.`);
+        const gaps = skill.gaps(initial, target);
+        const missing = gaps.find((gap) => gap.required);
+        if (missing) throw Error(missing.hint);
+        runInstruction = [
+          skill.instruction(initial, target, gaps),
+          instruction && `Owner instruction: ${instruction}`,
+        ]
+          .filter(Boolean)
+          .join('\n');
+      }
+      const prompt = executionPrompt(
+        initial,
+        target,
+        runInstruction,
+        skill && skillId ? { format: skill.format, scope: skillId } : undefined,
+      );
       const run = beginExecution(
         initial,
         endeavorId,
         instruction,
         row.revision,
         prompt,
+        new Date(),
+        skillId,
       );
       const startedData = JSON.stringify(initial);
       if (startedData.length > 500000)
@@ -623,7 +690,9 @@ export async function POST(req: Request) {
       try {
         const search = executionPlan.workload === 'research';
         const answer =
-          initial.mode === 'demo'
+          initial.mode === 'demo' && skillId === 'campaign_brief'
+            ? demoCampaignBrief(initial, target)
+            : initial.mode === 'demo'
             ? {
                 content: `# ${target.title}\n\n## Next useful deliverable\nThis is a fictional demo run. Prepare the smallest owner-reviewed ${target.kind.replace('_', ' ')} deliverable described in the Do brief.\n\n## Owner review\nVerify claims, links, names, and any external action before use.`,
                 nextDecision:
@@ -644,8 +713,13 @@ export async function POST(req: Request) {
           throw Error(
             'The run returned no inspectable provider source evidence.',
           );
-        const content = executionText(answer.content, 'content', 20000);
-        const nextDecision = executionText(answer.nextDecision, 'nextDecision', 2000);
+        const parsed = skill ? skill.parse(answer, initial, target) : undefined;
+        const content = parsed
+          ? parsed.content.slice(0, 20000)
+          : executionText(answer.content, 'content', 20000);
+        const nextDecision = parsed
+          ? parsed.nextDecision
+          : executionText(answer.nextDecision, 'nextDecision', 2000);
         let finalRevision: number | null = null;
         for (
           let attempt = 0;
@@ -657,7 +731,16 @@ export async function POST(req: Request) {
             throw Error('Business disappeared while the run was executing.');
           const completed = JSON.parse(latest.data) as BusinessDocument;
           const latestTarget = endeavorFor(completed, endeavorId);
-          const artifact = saveExecutionArtifact(
+          const artifact = skill && parsed
+            ? saveArtifact(completed, endeavorId, {
+                kind: skill.artifactKind,
+                title: `${latestTarget.code} ${skill.title.toLowerCase()}`,
+                content,
+                source: 'assistant',
+                sourceEvidence: sources,
+                data: parsed.data,
+              })
+            : saveExecutionArtifact(
             completed,
             endeavorId,
             latestTarget.kind === 'research'
@@ -694,8 +777,7 @@ export async function POST(req: Request) {
             'The business kept changing while the run was finishing.',
           );
         return out({
-          ...(await loadOrImport(u, id)),
-          revision: finalRevision,
+          ...(await reloaded(u, id, finalRevision)),
           runId: run.id,
         });
       } catch (e) {
@@ -715,8 +797,7 @@ export async function POST(req: Request) {
           if (saved !== null)
             return out(
               {
-                ...(await loadOrImport(u, id)),
-                revision: saved,
+                ...(await reloaded(u, id, saved)),
                 runId: run.id,
                 warning: error,
                 executionFailed: true,
@@ -939,7 +1020,7 @@ export async function POST(req: Request) {
           warning:
             'The business changed before the response could be saved. Your message is preserved.',
         });
-      return out({ ...(await loadOrImport(u, id)), revision: finalRevision });
+      return out(await reloaded(u, id, finalRevision));
     } else if (op === 'run_ideation') {
       const prompt =
         txt(x.prompt || '', 2000) ||
@@ -1020,6 +1101,7 @@ export async function POST(req: Request) {
         intendedDeliverables: stringList(x.intendedDeliverables, 10, 1200),
         effortBudget: required(x.effortBudget, 1200),
         completionCriteria: required(x.completionCriteria, 2000),
+        ...(x.audience !== undefined ? { audience: txt(x.audience, 600) } : {}),
       });
     } else if (op === 'transition_work') {
       transitionEndeavor(
@@ -1028,6 +1110,34 @@ export async function POST(req: Request) {
         endeavorStatus(x.status),
         txt(x.reason || '', 2000),
       );
+    } else if (op === 'set_evidence_bar') {
+      if (!isSuccessMetric(x.successMetric)) throw Error('Choose what counts as a win.');
+      setEvidenceBar(b, required(x.endeavorId, 100), {
+        successMetric: x.successMetric,
+        successTarget: numeric(x.successTarget),
+        maxSpend: optionalLimit(x.maxSpend),
+        maxDays: optionalLimit(x.maxDays),
+        maxContacts: optionalLimit(x.maxContacts),
+      });
+    } else if (op === 'generate_memo') {
+      if (!generateMemo(b, 'owner').created)
+        throw Error('Last week’s memo already exists. Refresh it to pick up new evidence.');
+    } else if (op === 'refresh_memo') {
+      refreshMemo(b, required(x.memoId, 100));
+    } else if (op === 'decide_memo_line') {
+      decideMemoLine(
+        b,
+        required(x.memoId, 100),
+        required(x.endeavorId, 100),
+        memoVerdict(x.verdict),
+        txt(x.note || '', 500),
+      );
+    } else if (op === 'set_audience') {
+      setAudience(b, required(x.endeavorId, 100), txt(x.audience || '', 600));
+    } else if (op === 'promote_concept') {
+      const index = Number(x.index);
+      if (!Number.isInteger(index) || index < 0 || index > 5) throw Error('Concept not found.');
+      promoteConcept(b, required(x.endeavorId, 100), required(x.artifactId, 100), index);
     } else if (op === 'set_checklist_item') {
       setChecklistItem(
         b,
@@ -1982,7 +2092,7 @@ export async function POST(req: Request) {
           },
           409,
         );
-      return out({ ...(await loadOrImport(u, id)), revision: final });
+      return out(await reloaded(u, id, final));
     } else throw Error('Unknown action.');
     const data = JSON.stringify(b);
     if (data.length > 500000)
@@ -1997,7 +2107,7 @@ export async function POST(req: Request) {
       );
     if (networkOps.has(op))
       await contribute(runtime(), u.id, b).catch(() => {});
-    return out({ ...(await loadOrImport(u, id)), revision: rev });
+    return out(await reloaded(u, id, rev));
   } catch (e) {
     console.error('operation failed', e);
     return out(

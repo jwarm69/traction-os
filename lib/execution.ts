@@ -1,5 +1,5 @@
 import { contextPack, STALE_FACT_DAYS } from './knowledge.ts';
-import { addLog, uid, type BusinessDocument, type Endeavor, type ExecutionRun } from './engine.ts';
+import { addLog, uid, type BusinessDocument, type CorrectionScope, type Endeavor, type ExecutionRun, type SkillId } from './engine.ts';
 import { endeavorFor, saveArtifact } from './work.ts';
 
 export const EXECUTION_LEASE_MS = 150_000;
@@ -18,6 +18,7 @@ export function beginExecution(
   contextRevision: number,
   contextSnapshot?: string,
   now = new Date(),
+  skillId?: SkillId,
 ) {
   const endeavor = endeavorFor(business, endeavorId);
   if (['completed', 'stopped'].includes(endeavor.status))
@@ -39,6 +40,7 @@ export function beginExecution(
     contextRevision,
     contextSnapshot: contextSnapshot?.slice(0, 28000),
     instruction,
+    ...(skillId ? { skillId } : {}),
   };
   runs.unshift(run);
   endeavor.updatedAt = now.toISOString();
@@ -91,9 +93,18 @@ export function failExecution(
   return run;
 }
 
-export function executionPrompt(business: BusinessDocument, endeavor: Endeavor, instruction: string) {
-  const knowledge = contextPack(business);
-  return `Execute one bounded internal work run. Return exactly one JSON object shaped like {"content":"editable draft text","nextDecision":"one concise decision for the owner"}. Both values must be plain strings: content must be at most 18,000 characters and nextDecision at most 1,500 characters. Do not nest sections inside content as an object or array; write the artifact as readable Markdown inside the content string. Create a useful editable artifact, with no claim that anything was sent, published, deployed, purchased, or approved. Cite supporting source URLs beside researched claims. Preserve unknowns for owner review. Facts marked "verify" are older than ${STALE_FACT_DAYS} days: use them only with that caveat. Follow every standing correction. ${instruction || 'Produce the smallest useful next deliverable.'} Context: ${JSON.stringify({
+const defaultFormat =
+  'Return exactly one JSON object shaped like {"content":"editable draft text","nextDecision":"one concise decision for the owner"}. Both values must be plain strings: content must be at most 18,000 characters and nextDecision at most 1,500 characters. Do not nest sections inside content as an object or array; write the artifact as readable Markdown inside the content string.';
+
+/** A skill passes its own output format and correction scope. */
+export function executionPrompt(
+  business: BusinessDocument,
+  endeavor: Endeavor,
+  instruction: string,
+  skill?: { format: string; scope: CorrectionScope },
+) {
+  const knowledge = contextPack(business, skill?.scope);
+  return `Execute one bounded internal work run. ${skill?.format || defaultFormat} Create a useful editable artifact, with no claim that anything was sent, published, deployed, purchased, or approved. Cite supporting source URLs beside researched claims. Preserve unknowns for owner review. Facts marked "verify" are older than ${STALE_FACT_DAYS} days: use them only with that caveat. Follow every standing correction. ${instruction || 'Produce the smallest useful next deliverable.'} Context: ${JSON.stringify({
     business: { name: business.name, url: business.url, goal: business.goal, budget: business.budget, notes: business.notes },
     markets: business.markets || [],
     endeavor: { title: endeavor.title, kind: endeavor.kind, description: endeavor.description, deliverables: endeavor.intendedDeliverables, budget: endeavor.effortBudget, completion: endeavor.completionCriteria, recentArtifacts: endeavor.artifacts.slice(-3).map((a) => ({ title: a.title, content: a.versions.at(-1)?.content?.slice(0, 1600) })), recentObservations: endeavor.observations.slice(0, 3) },

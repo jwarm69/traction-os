@@ -1,6 +1,6 @@
 # Campaign ID design (step 1 of the marketing-engineer adaptation)
 
-Status: design for implementation. Nothing below is built. Source of the idea: Greg Isenberg's "marketing engineers" thread, Step 3, "give every campaign an ID and carry it everywhere ... once you join those tables, your agents can answer which marketing brought in customers who paid and stayed."
+Status: implemented (merged in PR #6), including the freshness amendment from [MARKETING-ENGINEER-ROADMAP.md](MARKETING-ENGINEER-ROADMAP.md). Source of the idea: Greg Isenberg's "marketing engineers" thread, Step 3, "give every campaign an ID and carry it everywhere ... once you join those tables, your agents can answer which marketing brought in customers who paid and stayed."
 
 ## Goal
 

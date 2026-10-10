@@ -37,6 +37,8 @@ export async function listBusinesses(r: R, u: string) {
         latestObservation: d.work?.endeavors
           .flatMap((item) => item.observations || [])
           .sort((a, b) => b.observedAt.localeCompare(a.observedAt))[0]?.summary,
+        memoWeek: d.memos?.[0]?.weekKey,
+        undecidedMemoLines: d.memos?.[0]?.lines.filter((line) => !line.decision).length || 0,
       },
     };
   });

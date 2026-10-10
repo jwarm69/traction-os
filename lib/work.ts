@@ -5,6 +5,8 @@ import {
   type BusinessDocument,
   type Endeavor,
   type EndeavorStatus,
+  type EvidenceBar,
+  type GuidedExperiment,
   type MarketingIdea,
   type PortfolioState,
   type ResearchCandidate,
@@ -168,6 +170,7 @@ export function selectIdea(
     title: idea.title,
     kind: idea.kind,
     description: idea.description,
+    ...(idea.audience?.trim() ? { audience: idea.audience.trim() } : {}),
     intendedDeliverables: input.intendedDeliverables,
     effortBudget: input.effortBudget,
     completionCriteria: input.completionCriteria,
@@ -205,9 +208,11 @@ export function prepareGuidedProposal(business: BusinessDocument) {
     title: proposal.title,
     kind: 'experiment',
     description: `${proposal.uncertainty} ${proposal.rationale}`,
+    ...(proposal.audience?.trim() ? { audience: proposal.audience.trim() } : {}),
     intendedDeliverables: [proposal.action, proposal.measurementPlan],
     effortBudget: `${proposal.ownerContribution}; ${proposal.cost}; ${proposal.timeWindow}`,
     completionCriteria: `${proposal.successRule} Stop: ${proposal.stoppingRule}`,
+    evidenceBar: proposedEvidenceBar(proposal),
     status: 'preparing',
     checklist: [proposal.action, proposal.measurementPlan].map((text) => ({
       id: uid('step'),
@@ -256,6 +261,8 @@ export function transitionEndeavor(
   if (status === 'blocked' && !reason.trim())
     throw Error('Record what is blocking this work.');
   endeavor.status = status;
+  if (status === 'in_progress' && endeavor.evidenceBar?.setAt && !endeavor.evidenceBar.startedAt)
+    endeavor.evidenceBar.startedAt = now();
   endeavor.blockedReason = status === 'blocked' ? reason.trim() : undefined;
   endeavor.completedAt = status === 'completed' ? now() : undefined;
   endeavor.updatedAt = now();
@@ -272,11 +279,135 @@ export function updateEndeavor(
     intendedDeliverables: string[];
     effortBudget: string;
     completionCriteria: string;
+    audience?: string;
   },
 ) {
   const endeavor = endeavorFor(business, endeavorId);
-  Object.assign(endeavor, input, { updatedAt: now() });
+  const { audience, ...rest } = input;
+  Object.assign(endeavor, rest, { updatedAt: now() });
+  if (audience !== undefined) endeavor.audience = audience.trim() || undefined;
   addLog(business, `Do brief updated: ${endeavor.title}.`);
+  return endeavor;
+}
+
+const successMetrics: EvidenceBar['successMetric'][] = [
+  'conversations',
+  'spend',
+  'leads',
+  'qualified',
+  'deals',
+  'revenue',
+  'churned',
+];
+export const isSuccessMetric = (value: unknown): value is EvidenceBar['successMetric'] =>
+  typeof value === 'string' && (successMetrics as string[]).includes(value);
+
+const positive = (value: unknown) =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0;
+
+/**
+ * Set or replace the evidence bar. Changing a confirmed bar after the clock
+ * started is allowed and logged, because moving the goalposts is exactly what
+ * the memo should mention.
+ */
+export function setEvidenceBar(
+  business: BusinessDocument,
+  endeavorId: string,
+  input: {
+    successMetric: EvidenceBar['successMetric'];
+    successTarget: number;
+    maxSpend?: number;
+    maxDays?: number;
+    maxContacts?: number;
+  },
+) {
+  const endeavor = endeavorFor(business, endeavorId);
+  if (endeavor.status === 'completed' || endeavor.status === 'stopped')
+    throw Error('Reopen this work before setting its evidence bar.');
+  if (!isSuccessMetric(input.successMetric)) throw Error('Choose what counts as a win.');
+  if (!positive(input.successTarget)) throw Error('The win target must be a positive number.');
+  for (const key of ['maxSpend', 'maxDays', 'maxContacts'] as const)
+    if (input[key] !== undefined && !positive(input[key]))
+      throw Error('Limits must be positive numbers.');
+  if (input.maxDays !== undefined && !Number.isInteger(input.maxDays))
+    throw Error('The day limit must be a whole number.');
+  if (input.maxContacts !== undefined && !Number.isInteger(input.maxContacts))
+    throw Error('The contact limit must be a whole number.');
+  if (input.maxSpend === undefined && input.maxDays === undefined && input.maxContacts === undefined)
+    throw Error('Set at least one limit: spend, days, or contacts.');
+  const previous = endeavor.evidenceBar?.setAt ? endeavor.evidenceBar : undefined;
+  const at = now();
+  const startedAt =
+    previous?.startedAt || (endeavor.status === 'in_progress' ? at : undefined);
+  const bar: EvidenceBar = {
+    successMetric: input.successMetric,
+    successTarget: input.successTarget,
+    ...(input.maxSpend !== undefined ? { maxSpend: input.maxSpend } : {}),
+    ...(input.maxDays !== undefined ? { maxDays: input.maxDays } : {}),
+    ...(input.maxContacts !== undefined ? { maxContacts: input.maxContacts } : {}),
+    ...(startedAt ? { startedAt } : {}),
+    setAt: previous?.setAt || at,
+  };
+  const changed =
+    previous &&
+    JSON.stringify({ ...previous, setAt: '', startedAt: '', revisedAt: '' }) !==
+      JSON.stringify({ ...bar, setAt: '', startedAt: '', revisedAt: '' });
+  if (changed && previous.startedAt) {
+    bar.revisedAt = at;
+    const days = Math.floor((Date.parse(at) - Date.parse(previous.startedAt)) / 86_400_000);
+    addLog(business, `Evidence bar changed for ${endeavor.code} after ${days} day${days === 1 ? '' : 's'} of activity.`);
+  } else {
+    if (previous?.revisedAt) bar.revisedAt = previous.revisedAt;
+    addLog(business, `Evidence bar ${previous ? 'updated' : 'set'} for ${endeavor.code}.`);
+  }
+  endeavor.evidenceBar = bar;
+  endeavor.updatedAt = at;
+  return bar;
+}
+
+const metricWords: [RegExp, EvidenceBar['successMetric']][] = [
+  [/^conversations?\b|^calls?\b|^meetings?\b/i, 'conversations'],
+  [/^qualified\b/i, 'qualified'],
+  [/^leads?\b|^sign-?ups?\b/i, 'leads'],
+  [/^deals?\b|^sales?\b/i, 'deals'],
+];
+const amount = (text: string) => {
+  const match = text.replace(/,/g, '').match(/\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : undefined;
+};
+
+/**
+ * A proposed bar parsed from a guided experiment's own words. It never guesses:
+ * anything it cannot read stays empty, and setAt stays empty until the owner
+ * confirms. Returns undefined when no metric and target can be read.
+ */
+export function proposedEvidenceBar(
+  proposal: Pick<GuidedExperiment, 'successRule' | 'cost' | 'timeWindow'>,
+): EvidenceBar | undefined {
+  const rule = proposal.successRule.replace(/,/g, '');
+  const match = rule.match(/(\d+(?:\.\d+)?)\s+(?:or more\s+|\+\s*)?([a-z-]+(?:\s+[a-z-]+)?)/i);
+  if (!match) return undefined;
+  const target = Number(match[1]);
+  const metric = metricWords.find(([pattern]) => pattern.test(match[2]))?.[1];
+  if (!metric || !positive(target)) return undefined;
+  const bar: EvidenceBar = { successMetric: metric, successTarget: target, setAt: '' };
+  if (/[$€£]|usd|dollars?/i.test(proposal.cost)) {
+    const spend = amount(proposal.cost);
+    if (positive(spend)) bar.maxSpend = spend;
+  }
+  const window = proposal.timeWindow.match(/(\d+)\s*(day|week)s?/i);
+  if (window) {
+    const days = Number(window[1]) * (window[2].toLowerCase() === 'week' ? 7 : 1);
+    if (positive(days)) bar.maxDays = days;
+  }
+  return bar;
+}
+
+export function setAudience(business: BusinessDocument, endeavorId: string, audience: string) {
+  const endeavor = endeavorFor(business, endeavorId);
+  endeavor.audience = audience.trim() || undefined;
+  endeavor.updatedAt = now();
+  addLog(business, `Audience ${endeavor.audience ? 'set' : 'cleared'} for ${endeavor.code}.`);
   return endeavor;
 }
 
@@ -316,6 +447,7 @@ export function saveArtifact(
     content: string;
     source: 'owner' | 'assistant';
     sourceEvidence?: string[];
+    data?: string;
   },
 ) {
   const endeavor = endeavorFor(business, endeavorId);
@@ -330,6 +462,7 @@ export function saveArtifact(
     content: input.content,
     source: input.source,
     createdAt: at,
+    ...(input.data && input.source === 'assistant' && input.data.length <= 20_000 ? { data: input.data } : {}),
   };
   if (!artifact) {
     artifact = {

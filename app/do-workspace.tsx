@@ -36,6 +36,10 @@ import { executionCostLabel, planExecution } from '@/lib/execution-policy';
 import './do-execution.css';
 import RunnerPanel from './runner-panel';
 import PipelinePanel from './pipeline-panel';
+import EvidenceBarPanel from './evidence-bar-panel';
+import RunRecordPanel from './run-record-panel';
+import CampaignBriefPanel, { ConceptList } from './campaign-brief-panel';
+import { parseBriefData } from '@/lib/skills';
 
 type Act = (op: string, extra?: Record<string, unknown>) => Promise<boolean>;
 const statusLabels: Record<EndeavorStatus, string> = {
@@ -457,6 +461,12 @@ export default function DoWorkspace({
                   <p>{selected.completionCriteria}</p>
                 </div>
               </div>
+              <EvidenceBarPanel
+                key={selected.id}
+                endeavor={selected}
+                act={act}
+                busy={busy}
+              />
               <div className="execution-hero">
                 <div className="execution-hero-copy">
                   <span className="eyebrow">CONTROLLED AUTONOMY</span>
@@ -504,6 +514,15 @@ export default function DoWorkspace({
                   </Button>
                 </div>
               </div>
+              <CampaignBriefPanel
+                key={`brief-${selected.id}`}
+                b={b}
+                endeavor={selected}
+                act={act}
+                busy={busy}
+                aiReady={aiReady}
+                running={!!runningLeaseActive}
+              />
               <details className="knowledge-preview">
                 <summary>
                   What the agent will see ({knowledge.facts.length} fact
@@ -614,6 +633,7 @@ export default function DoWorkspace({
                 </p>
                 {selected.artifacts.map((item) => {
                   const version = activeArtifact(item);
+                  const briefData = parseBriefData(version?.data);
                   const evidence = (item.sourceEvidence || []).filter((url) =>
                     /^https?:\/\//i.test(url),
                   );
@@ -630,7 +650,18 @@ export default function DoWorkspace({
                           {item.reviewedAt ? 'Reviewed' : 'Needs review'}
                         </small>
                       </div>
-                      <pre>{version?.content}</pre>
+                      {briefData ? (
+                        <ConceptList
+                          b={b}
+                          data={briefData}
+                          endeavor={selected}
+                          artifact={item}
+                          act={act}
+                          busy={busy}
+                        />
+                      ) : (
+                        <pre>{version?.content}</pre>
+                      )}
                       {evidence.length > 0 && (
                         <div className="artifact-evidence">
                           <strong>Provider source links</strong>
@@ -1008,6 +1039,8 @@ export default function DoWorkspace({
                   </div>
                 </details>
               </div>
+
+              <RunRecordPanel b={b} endeavorId={selected.id} />
 
               <div className="work-section">
                 <h3>Observations and learning</h3>

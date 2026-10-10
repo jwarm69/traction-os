@@ -1,6 +1,6 @@
 # Marketing-engineer adaptation: map and steps 4–7
 
-Status: design map. Nothing below is built. Steps 1–3 have their own designs: [CAMPAIGN-ID.md](CAMPAIGN-ID.md), [CUSTOMER-LANGUAGE.md](CUSTOMER-LANGUAGE.md), [PERFORMANCE-MEMO.md](PERFORMANCE-MEMO.md). This document adds a second source, checks it against the product and those three designs, records the amendments it forces, and outlines steps 4–7.
+Status: design map. Built so far: step 1 (campaign codes, PR #6), step 5 (knowledge library, PR #8), step 3's evidence bar and memo core (see [PERFORMANCE-MEMO.md](PERFORMANCE-MEMO.md) for what shipped and what did not), step 4 (campaign brief skill), and step 6 (run record and exports); implementation notes sit under steps 4 and 6. Steps 2 and 7 remain designs. Steps 1–3 have their own designs: [CAMPAIGN-ID.md](CAMPAIGN-ID.md), [CUSTOMER-LANGUAGE.md](CUSTOMER-LANGUAGE.md), [PERFORMANCE-MEMO.md](PERFORMANCE-MEMO.md). This document adds a second source, checks it against the product and those three designs, records the amendments it forces, and outlines steps 4–7.
 
 Sources:
 
@@ -150,6 +150,18 @@ Two touches in the Do workspace (`app/do-workspace.tsx`):
 
 Out of scope: image or video generation, automatic landing pages (a landing-page prototype is a `product_improvement` endeavor and already routes to the Codex runner), and any second skill. The skill object exists so the next one is a file, not a refactor.
 
+### Implementation notes (October 2026)
+
+Built as `lib/skills.ts` with `tests/skills.test.mjs`, `app/campaign-brief-panel.tsx` in Do, ops `set_audience` and `promote_concept`, and a `skillId` on `run_work`. Differences from the outline above:
+
+- The offer input is satisfied by a confirmed `offer` or `product` fact; when no confirmed fact has a category yet, any confirmed fact counts, so libraries from before step 5 are not blocked.
+- The instruction lists the evidence the model may cite, as `fact:<id>` lines from the context pack plus shortlisted research URLs, so evidence can be checked. The UI shows a cited fact by its label.
+- `executionPrompt` takes the skill's output format and correction scope, so `campaign_brief` corrections reach the run and `customer_language` corrections do not.
+- Output with no concepts is rejected; everything else is kept and flagged. Over-length fields are cut to the limit and flagged.
+- Owner versions never carry `data`, so promoting works from the latest assistant version only; after an owner rewrite the concepts are no longer actionable, which is the honest state.
+- Demo businesses return fictional concepts, so the whole path runs without a provider. A live run has not been exercised yet; it needs an OpenAI key and spends up to $0.125 of the shared ledger per brief.
+- `audience` is set through the brief panel (`set_audience`); `update_work` also accepts it.
+
 ## Step 5 — Knowledge library
 
 Goal: the facts, language, approved examples, and corrections an owner has already judged reach every run, in a predictable order, with their age visible, and the owner can see what the agent will be told before it is told.
@@ -284,6 +296,15 @@ The roadmap compares preparation and review time against the old process. Tracti
 
 - `tests/run-record.test.mjs` (new): entries from in-app runs and runner imports; diff count against a fixture; effort is listed and never summed; a failed run appears with its error; purity.
 - `tests/business-api.mjs`: run, edit, add a correction with `fromArtifactId`, and assert the record shows one owner version and one correction.
+
+### Implementation notes (October 2026)
+
+Built as `lib/run-record.ts` with `tests/run-record.test.mjs`, a Run record section in Do (`app/run-record-panel.tsx`), and Portfolio buttons for the campaign table CSV and the case-study draft. Differences from the outline above:
+
+- Entries come from assistant artifact versions as well as `ExecutionRun`s, because `generate_artifact` and runner imports never create a run. Each entry is an in-app run, a desktop runner result (`runner-job:<id>`), or a generated draft (`version:<id>`). The runner route is not split into Codex and computer use; the business document does not record which one ran.
+- `ExecutionRun` was not extended. `route` is derived, and `skillId` arrives with step 4.
+- Owner edits and corrections are attributed to the assistant output they followed, up to the next assistant output on the same artifact. The changed-line count is an LCS diff over the first 2,000 lines.
+- The CSV leaves unknown cells empty, never 0, and prefixes text cells that a spreadsheet would execute as a formula with an apostrophe.
 
 ## Step 7 — Paired agent connection
 
