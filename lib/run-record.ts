@@ -10,6 +10,7 @@ import type {
 } from './engine.ts';
 import { campaignRow, campaignTable, type CampaignRow } from './campaigns.ts';
 import { endeavorFor, workState } from './work.ts';
+import { assetTable, type AssetRow } from './assets.ts';
 
 /**
  * The run record: for one campaign, what went in, what came out, what the
@@ -56,6 +57,8 @@ export type RunRecord = {
   /** actualEffort as written. Free text, so never summed or compared. */
   effort: string[];
   row: CampaignRow;
+  /** Classified signals split by tracked asset, including an unassigned row. */
+  assets: AssetRow[];
 };
 
 export const routeLabels: Record<RunRecordEntry['route'], string> = {
@@ -198,6 +201,7 @@ export function runRecord(business: BusinessDocument, endeavorId: string, now = 
     memoDecisions,
     effort: endeavor.observations.map((item) => item.actualEffort.trim()).filter(Boolean),
     row: campaignRow(business, endeavorId, undefined, now),
+    assets: assetTable(business, endeavorId),
   };
 }
 
@@ -246,6 +250,19 @@ const numbers: [NumberKey, string][] = [
   ['churned', 'Churned'],
   ['costPerConversation', 'Cost per conversation'],
 ];
+
+function assetLines(rows: AssetRow[]) {
+  if (!rows.length) return [];
+  const value = (number: number | null) => (number === null ? 'unknown' : String(number));
+  return [
+    '',
+    'By video:',
+    ...rows.map(
+      (row) =>
+        `- ${row.name || 'Not assigned to a video'}: spend ${value(row.spend)}, leads ${value(row.leads)}, qualified ${value(row.qualified)}, deals ${value(row.deals)}, cost per lead ${value(row.costPerLead)}`,
+    ),
+  ];
+}
 
 function resultLines(row: CampaignRow) {
   const lines = [
@@ -296,6 +313,7 @@ export function renderRunRecord(record: RunRecord) {
     '## Results',
     '',
     ...resultLines(record.row),
+    ...assetLines(record.assets),
     '',
   );
   return lines.join('\n');
@@ -350,6 +368,7 @@ export function renderCaseStudy(business: BusinessDocument, now = Date.now()) {
       '',
       record.evidenceBar ? `Evidence bar: ${barText(record.evidenceBar)}.` : 'Evidence bar: not set.',
       ...resultLines(record.row),
+      ...assetLines(record.assets),
       ...record.memoDecisions.map(
         (item) => `- Memo ${item.weekKey}: ${item.verdict}${item.note ? ` — ${quote(item.note)}` : ''}`,
       ),

@@ -9,6 +9,8 @@ export type ImportedSignal = {
   /** Campaign code as typed by the owner; resolved to an endeavor by the caller. */
   campaign?: string;
   campaignMetric?: CampaignMetric;
+  /** Registered asset name within that campaign; resolved by the caller. */
+  asset?: string;
 };
 /** RFC-style quoted fields and embedded newlines. Reject the entire import on bad data. */
 export function parseSignalsCsv(input: string): ImportedSignal[] {
@@ -86,6 +88,11 @@ export function parseSignalsCsv(input: string): ImportedSignal[] {
       throw new Error(`CSV row ${index + 2} has an oversized note or source.`);
     const campaign = get('campaign').toUpperCase();
     const campaignMetric = get('campaign_metric').toLowerCase();
+    const asset = get('asset');
+    if (asset && !campaign)
+      throw new Error(`CSV row ${index + 2} names an asset without a campaign.`);
+    if (asset.length > 80)
+      throw new Error(`CSV row ${index + 2} has an invalid asset name.`);
     if (!!campaign !== !!campaignMetric)
       throw new Error(
         `CSV row ${index + 2} needs both campaign and campaign_metric, or neither.`,
@@ -108,6 +115,7 @@ export function parseSignalsCsv(input: string): ImportedSignal[] {
       ...(campaign
         ? { campaign, campaignMetric: campaignMetric as CampaignMetric }
         : {}),
+      ...(asset ? { asset } : {}),
     };
   });
 }

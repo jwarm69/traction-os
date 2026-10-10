@@ -88,6 +88,13 @@ import {
   unmarkExemplar,
 } from '@/lib/knowledge';
 import {
+  isRenderFormat,
+  registerExternalAsset,
+  registerMotionAsset,
+  resolveSignalAsset,
+  setAssetLinks,
+} from '@/lib/assets';
+import {
   demoCampaignBrief,
   isSkillId,
   promoteConcept,
@@ -279,14 +286,22 @@ const optionalEndeavorId = (b: BusinessDocument, value: unknown) => {
   return endeavorId;
 };
 /** Both or neither: a campaign metric without a campaign is unclassifiable. */
-const campaignClassification = (b: BusinessDocument, x: Record<string, unknown>) => {
+const campaignClassification = (
+  b: BusinessDocument,
+  x: Record<string, unknown>,
+): { endeavorId?: string; campaignMetric?: CampaignMetric; asset?: string } => {
   const endeavorId = optionalEndeavorId(b, x.endeavorId);
   const hasMetric =
     x.campaignMetric !== undefined && x.campaignMetric !== null && x.campaignMetric !== '';
   if (!endeavorId && !hasMetric) return {};
   if (!endeavorId || !hasMetric)
     throw Error('Classify a campaign signal with both a campaign and a campaign metric, or neither.');
-  return { endeavorId, campaignMetric: campaignMetric(x.campaignMetric) };
+  const asset = txt(x.asset || '', 80);
+  return {
+    endeavorId,
+    campaignMetric: campaignMetric(x.campaignMetric),
+    ...(asset ? { asset: resolveSignalAsset(endeavorFor(b, endeavorId), asset) } : {}),
+  };
 };
 function legacy(
   raw: string,
@@ -1132,6 +1147,22 @@ export async function POST(req: Request) {
         memoVerdict(x.verdict),
         txt(x.note || '', 500),
       );
+    } else if (op === 'register_asset') {
+      const formats = Array.isArray(x.formats) ? x.formats.filter(isRenderFormat) : [];
+      registerMotionAsset(b, required(x.endeavorId, 100), {
+        briefArtifactId: required(x.briefArtifactId, 100),
+        index: Number(x.index),
+        formats,
+        hook: txt(x.hook || '', 200),
+        ctaText: txt(x.ctaText || '', 60),
+      });
+    } else if (op === 'add_asset') {
+      registerExternalAsset(b, required(x.endeavorId, 100), required(x.name, 80));
+    } else if (op === 'set_asset_links') {
+      setAssetLinks(b, required(x.endeavorId, 100), required(x.name, 80), {
+        mediaUrl: txt(x.mediaUrl || '', 2000),
+        publishedUrl: txt(x.publishedUrl || '', 2000),
+      });
     } else if (op === 'set_audience') {
       setAudience(b, required(x.endeavorId, 100), txt(x.audience || '', 600));
     } else if (op === 'promote_concept') {
@@ -1628,7 +1659,7 @@ export async function POST(req: Request) {
       addLog(
         b,
         classification.endeavorId
-          ? `Signal added: ${txt(x.metric, 120)} (${endeavorFor(b, classification.endeavorId).code} ${classification.campaignMetric}).`
+          ? `Signal added: ${txt(x.metric, 120)} (${endeavorFor(b, classification.endeavorId).code} ${classification.campaignMetric}${classification.asset ? `, ${classification.asset}` : ''}).`
           : `Signal added: ${txt(x.metric, 120)}.`,
       );
     } else if (op === 'import_csv') {
@@ -1638,14 +1669,26 @@ export async function POST(req: Request) {
       // Resolve every campaign code before writing anything: one unknown code
       // rejects the whole file, like any other bad row.
       const resolved = imported.map((signal, index) => {
-        const { campaign, campaignMetric: metric, ...rest } = signal;
+        const { campaign, campaignMetric: metric, asset, ...rest } = signal;
         if (!campaign) return rest;
         const endeavor = endeavorByCode(b, campaign);
         if (!endeavor)
           throw Error(
             `CSV row ${index + 2} names campaign ${campaign}, which does not exist in this business.`,
           );
-        return { ...rest, endeavorId: endeavor.id, campaignMetric: metric };
+        let resolvedAsset: string | undefined;
+        if (asset)
+          try {
+            resolvedAsset = resolveSignalAsset(endeavor, asset);
+          } catch (error) {
+            throw Error(`CSV row ${index + 2}: ${(error as Error).message}`);
+          }
+        return {
+          ...rest,
+          endeavorId: endeavor.id,
+          campaignMetric: metric,
+          ...(resolvedAsset ? { asset: resolvedAsset } : {}),
+        };
       });
       for (const signal of resolved)
         b.signals.push({

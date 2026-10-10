@@ -66,10 +66,11 @@ export function endeavorByCode(business: BusinessDocument, code: string) {
 }
 
 /**
- * A copy of the URL carrying the campaign code as UTM parameters. Traction
- * writes these for the owner to paste; it does not read them back.
+ * A copy of the URL carrying the campaign code as UTM parameters, and the
+ * asset name as utm_content when one is given. Traction writes these for the
+ * owner to paste; it does not read them back.
  */
-export function campaignLink(url: string, code: string, medium = 'owner') {
+export function campaignLink(url: string, code: string, medium = 'owner', content?: string) {
   let parsed: URL;
   try {
     parsed = new URL(url.trim());
@@ -82,6 +83,7 @@ export function campaignLink(url: string, code: string, medium = 'owner') {
   parsed.searchParams.set('utm_source', 'traction');
   parsed.searchParams.set('utm_medium', slug(medium) || 'owner');
   parsed.searchParams.set('utm_campaign', code.trim());
+  if (content?.trim()) parsed.searchParams.set('utm_content', content.trim());
   return parsed.toString();
 }
 

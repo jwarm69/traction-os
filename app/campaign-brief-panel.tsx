@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import type { BusinessDocument, Endeavor, WorkArtifact } from '@/lib/engine';
 import { executionCostLabel, planExecution } from '@/lib/execution-policy';
 import { skillKinds, skills, type CampaignBriefData } from '@/lib/skills';
+import { ExportSpecForm } from './videos-panel';
 
 type Act = (op: string, extra?: Record<string, unknown>) => Promise<boolean>;
 const skill = skills.campaign_brief;
@@ -154,6 +155,14 @@ export function ConceptList({
               {promoted(index) ? 'Promoted' : 'Promote to production brief'}
             </Button>
           </div>
+          <ExportSpecForm
+            b={b}
+            endeavor={endeavor}
+            briefArtifactId={artifact.id}
+            index={index}
+            act={act}
+            busy={busy}
+          />
           {concept.flags.length > 0 && (
             <ul className="concept-flags">
               {concept.flags.map((flag) => (

@@ -38,6 +38,7 @@ import RunnerPanel from './runner-panel';
 import PipelinePanel from './pipeline-panel';
 import EvidenceBarPanel from './evidence-bar-panel';
 import RunRecordPanel from './run-record-panel';
+import VideosPanel from './videos-panel';
 import CampaignBriefPanel, { ConceptList } from './campaign-brief-panel';
 import { parseBriefData } from '@/lib/skills';
 
@@ -1040,6 +1041,7 @@ export default function DoWorkspace({
                 </details>
               </div>
 
+              <VideosPanel b={b} endeavor={selected} act={act} busy={busy} />
               <RunRecordPanel b={b} endeavorId={selected.id} />
 
               <div className="work-section">
