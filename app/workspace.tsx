@@ -1080,6 +1080,7 @@ function Signals({
                 ...form,
                 signalEndeavorId: e.target.value,
                 signalMetric: e.target.value ? form.signalMetric || '' : '',
+                signalAsset: '',
               })
             }
           >
@@ -1106,6 +1107,23 @@ function Signals({
             ))}
           </select>
         )}
+        {!!form.signalEndeavorId &&
+          !!endeavors.find((item) => item.id === form.signalEndeavorId)?.assets?.length && (
+            <select
+              aria-label="Video (optional)"
+              value={form.signalAsset || ''}
+              onChange={(e) => setForm({ ...form, signalAsset: e.target.value })}
+            >
+              <option value="">Whole campaign, no specific video</option>
+              {endeavors
+                .find((item) => item.id === form.signalEndeavorId)
+                ?.assets?.map((asset) => (
+                  <option key={asset.name} value={asset.name}>
+                    {asset.name}
+                  </option>
+                ))}
+            </select>
+          )}
         <Button
           disabled={!!form.signalEndeavorId && !form.signalMetric}
           onClick={() =>
@@ -1117,6 +1135,7 @@ function Signals({
               note: '',
               endeavorId: form.signalEndeavorId || undefined,
               campaignMetric: form.signalMetric || undefined,
+              asset: form.signalAsset || undefined,
             })
           }
         >
@@ -1129,13 +1148,15 @@ function Signals({
           Columns: metric, value, period, note, source. Optional: campaign (a
           campaign code such as {endeavors[0]?.code || 'CMP001'}) and
           campaign_metric ({campaignMetrics.join(', ')}). Use both or neither.
-          An unknown code rejects the whole file. Up to 200 rows.
+          Optional asset: a registered video name from Do, such as
+          AG001_proof-first_motion_v1, to track results per video. An unknown
+          code or asset rejects the whole file. Up to 200 rows.
         </p>
         <Textarea
           value={form.csv || ''}
           onChange={(e) => setForm({ ...form, csv: e.target.value })}
           placeholder={
-            'metric,value,period,note,campaign,campaign_metric\nAd spend,250,August,Meta export,CMP001,spend'
+            'metric,value,period,note,campaign,campaign_metric,asset\nAd spend,250,August,Meta export,CMP001,spend,CMP001_hook-a_motion_v1'
           }
         />
         <Button
@@ -1162,7 +1183,7 @@ function Signals({
                 <small>
                   {s.period}
                   {s.endeavorId && s.campaignMetric
-                    ? ` · ${endeavors.find((item) => item.id === s.endeavorId)?.code || 'campaign'} ${s.campaignMetric}`
+                    ? ` · ${endeavors.find((item) => item.id === s.endeavorId)?.code || 'campaign'} ${s.campaignMetric}${s.asset ? ` · ${s.asset}` : ''}`
                     : ''}
                 </small>
               </span>

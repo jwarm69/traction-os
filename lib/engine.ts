@@ -70,6 +70,29 @@ export type Signal = Provenance & {
   endeavorId?: string;
   /** Only signals with both endeavorId and campaignMetric count in the campaign table. */
   campaignMetric?: CampaignMetric;
+  /** Registered asset (video) of that campaign this measurement belongs to. Requires a classified campaign signal. */
+  asset?: string;
+};
+/** Video aspect presets a render spec can ask for. */
+export type RenderFormat = '9:16' | '1:1' | '16:9' | '4:5';
+export const renderFormats: RenderFormat[] = ['9:16', '1:1', '16:9', '4:5'];
+/**
+ * One trackable creative (usually a rendered video) inside a campaign. The name
+ * is the join key for signals, CSV rows, and utm_content.
+ */
+export type CampaignAsset = {
+  name: string;
+  kind: 'motion' | 'external';
+  createdAt: string;
+  /** Present for assets exported from a campaign brief concept, so the spec can be rebuilt exactly. */
+  concept?: { briefArtifactId: string; briefVersion: number; index: number; angle: string };
+  version?: number;
+  hook?: string;
+  ctaText?: string;
+  formats?: RenderFormat[];
+  /** Owner-supplied https links: the rendered file and where it was published. */
+  mediaUrl?: string;
+  publishedUrl?: string;
 };
 export type Diagnosis = {
   bottleneck: string;
@@ -426,6 +449,8 @@ export type Endeavor = {
   observations: WorkObservation[];
   executionRuns?: ExecutionRun[];
   evidenceBar?: EvidenceBar;
+  /** Trackable creatives in this campaign, newest last. */
+  assets?: CampaignAsset[];
   createdAt: string;
   updatedAt: string;
   completedAt?: string;

@@ -2124,3 +2124,18 @@ details.campaign-brief-gaps{padding-left:0}
 .concept-card dt{color:var(--muted-foreground);font-weight:600}
 .concept-card dd{margin:0}
 @media (max-width:640px){.concept-card dl{grid-template-columns:1fr}.concept-card dt{margin-top:6px}}
+.asset-list{display:grid;gap:8px;list-style:none;margin:0;padding:0}
+.asset-card{display:grid;gap:6px;border:1px solid var(--border);border-left:3px solid #3a5f9e;border-radius:10px;padding:10px 12px;background:var(--background)}
+.asset-card p{margin:0}
+.asset-head{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;justify-content:space-between}
+.asset-head code{font-size:13px;word-break:break-all}
+.asset-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.asset-actions a{display:inline-flex;gap:4px;align-items:center}
+.asset-links{display:grid;gap:6px}
+.asset-unassigned{display:grid;gap:4px;border:1px dashed var(--border);border-radius:10px;padding:10px 12px}
+.asset-unassigned p{margin:0}
+.export-spec{display:grid;gap:8px;border:1px dashed var(--border);border-radius:10px;padding:10px}
+.export-spec p{margin:0}
+.export-spec-formats{display:flex;flex-wrap:wrap;gap:12px;border:0;padding:0;margin:0}
+.export-spec-formats legend{padding:0;margin-bottom:4px}
+.export-spec-formats label{display:inline-flex;gap:6px;align-items:center;font-weight:500}
